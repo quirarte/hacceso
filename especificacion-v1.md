@@ -326,6 +326,9 @@ No pegar en archivos versionados ni chats públicos:
 | Project URL | https://faatolsezlylgsnncdnb.supabase.co |
 | Project reference | faatolsezlylgsnncdnb |
 | NEXT_PUBLIC_SUPABASE_URL | https://faatolsezlylgsnncdnb.supabase.co |
+| Project URL | PENDIENTE |
+| Project reference | PENDIENTE |
+| NEXT_PUBLIC_SUPABASE_URL | PENDIENTE |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | PENDIENTE |
 | Dominio panel (CORS) | PENDIENTE |
 | Edge base URL | PENDIENTE |
