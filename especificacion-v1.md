@@ -266,3 +266,71 @@ Escenarios mínimos de aceptación:
 2. Definir URL final de Vercel como variable de configuración.
 3. Confirmar disponibilidad de Argon2id en runtime de Edge Functions.
 4. Definir procedimiento admin para alta/baja de dispositivos y llaves emisor.
+
+## 14) Guía de alta en Supabase (para compartir accesos y rutas)
+
+Objetivo: que el administrador prepare el proyecto y comparta únicamente los datos necesarios para integrar backend/panel sin exponer secretos sensibles en el repositorio.
+
+### 14.1 Crear proyecto y región
+1. Entrar a Supabase Dashboard.
+2. `New project`.
+3. Definir:
+   - `Organization`
+   - `Project name`: sugerido `hacedores-access-prod`
+   - `Database Password`: generar y guardar en gestor de secretos
+   - `Region`: la más cercana a Ciudad de México
+4. Esperar provisionamiento completo.
+
+### 14.2 Activar extensiones SQL recomendadas
+En `SQL Editor`, ejecutar:
+
+```sql
+create extension if not exists pgcrypto;
+```
+
+### 14.3 Crear esquema base (tablas MVP)
+En `SQL Editor`, ejecutar script de creación de tablas e índices cuando se inicie implementación.
+
+Nota: este documento define el contrato; la migración SQL final se versionará en el repositorio.
+
+### 14.4 Obtener rutas/endpoints a compartir
+Desde `Project Settings` copiar y compartir estos valores:
+- `Project URL` (ej: `https://<project-ref>.supabase.co`)
+- `Project reference` (`<project-ref>`)
+- URL de funciones Edge:
+  - Base: `https://<project-ref>.supabase.co/functions/v1`
+  - Salud: `https://<project-ref>.supabase.co/functions/v1/device-health`
+  - Validación: `https://<project-ref>.supabase.co/functions/v1/device-validate`
+  - Admin create invite: `https://<project-ref>.supabase.co/functions/v1/admin-invites-create`
+
+### 14.5 Llaves y secretos (qué sí compartir y qué no)
+Compartir conmigo para integración de configuración:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Dominio final del panel (para CORS)
+
+No pegar en archivos versionados ni chats públicos:
+- `service_role key`
+- `database password`
+- `issuer/device api keys` en claro
+
+### 14.6 Checklist para habilitar Realtime
+1. Ir a `Database` → `Replication`.
+2. Habilitar replicación para tabla `scan_events`.
+3. Confirmar que la suscripción de inserciones esté activa.
+
+### 14.7 Plantilla de datos que me debes pasar para completar este MD
+
+| Campo | Valor real |
+|---|---|
+| Project URL | PENDIENTE |
+| Project reference | PENDIENTE |
+| NEXT_PUBLIC_SUPABASE_URL | PENDIENTE |
+| NEXT_PUBLIC_SUPABASE_ANON_KEY | PENDIENTE |
+| Dominio panel (CORS) | PENDIENTE |
+| Edge base URL | PENDIENTE |
+| URL `device-health` | PENDIENTE |
+| URL `device-validate` | PENDIENTE |
+| URL `admin-invites-create` | PENDIENTE |
+
+Con esa tabla llena, actualizo este archivo con tus rutas reales y lo dejo listo como fuente oficial de configuración.
