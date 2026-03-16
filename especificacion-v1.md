@@ -371,6 +371,8 @@ Como el frontend vivirá en Vercel, necesito estos datos para cerrar configuraci
 
 | Campo | Valor real |
 |---|---|
+| Vercel project name | hacceso |
+| Vercel production URL | https://hacceso.vercel.app |
 | Vercel project name | PENDIENTE |
 | Vercel production URL | PENDIENTE |
 | Dominio personalizado (si aplica) | PENDIENTE |
@@ -379,3 +381,23 @@ Como el frontend vivirá en Vercel, necesito estos datos para cerrar configuraci
 | CORS final permitido | PENDIENTE |
 
 Con esa información, actualizo este documento con valores finales y dejo cerrada la configuración de infraestructura para iniciar implementación.
+
+### 15.5 Dónde obtener `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+En Supabase Dashboard:
+1. Abrir tu proyecto (`faatolsezlylgsnncdnb`).
+2. Ir a `Project Settings` → `API`.
+3. Copiar:
+   - `Project URL` => este valor va en `NEXT_PUBLIC_SUPABASE_URL`.
+   - `anon public` key => este valor va en `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+
+En Vercel:
+1. Ir a tu proyecto `hacceso` → `Settings` → `Environment Variables`.
+2. Crear estas variables para entorno `Production`:
+   - `NEXT_PUBLIC_SUPABASE_URL` = `https://faatolsezlylgsnncdnb.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = `<pegar anon public key de Supabase>`
+3. Guardar cambios y hacer un redeploy del proyecto para que tomen efecto.
+
+Verificación rápida:
+- En Vercel, confirma que ambas variables aparecen en la lista con scope `Production`.
+- En la app desplegada, verifica que las llamadas a Supabase apunten a `faatolsezlylgsnncdnb.supabase.co`.
