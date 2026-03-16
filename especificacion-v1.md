@@ -326,6 +326,9 @@ No pegar en archivos versionados ni chats públicos:
 | Project URL | https://faatolsezlylgsnncdnb.supabase.co |
 | Project reference | faatolsezlylgsnncdnb |
 | NEXT_PUBLIC_SUPABASE_URL | https://faatolsezlylgsnncdnb.supabase.co |
+| Project URL | PENDIENTE |
+| Project reference | PENDIENTE |
+| NEXT_PUBLIC_SUPABASE_URL | PENDIENTE |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | PENDIENTE |
 | Dominio panel (CORS) | PENDIENTE |
 | Edge base URL | PENDIENTE |
@@ -370,6 +373,8 @@ Como el frontend vivirá en Vercel, necesito estos datos para cerrar configuraci
 |---|---|
 | Vercel project name | hacceso |
 | Vercel production URL | https://hacceso.vercel.app |
+| Vercel project name | PENDIENTE |
+| Vercel production URL | PENDIENTE |
 | Dominio personalizado (si aplica) | PENDIENTE |
 | `NEXT_PUBLIC_SUPABASE_URL` en Production | OK/PENDIENTE |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` en Production | OK/PENDIENTE |
