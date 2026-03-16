@@ -323,6 +323,9 @@ No pegar en archivos versionados ni chats públicos:
 
 | Campo | Valor real |
 |---|---|
+| Project URL | https://faatolsezlylgsnncdnb.supabase.co |
+| Project reference | faatolsezlylgsnncdnb |
+| NEXT_PUBLIC_SUPABASE_URL | https://faatolsezlylgsnncdnb.supabase.co |
 | Project URL | PENDIENTE |
 | Project reference | PENDIENTE |
 | NEXT_PUBLIC_SUPABASE_URL | PENDIENTE |
@@ -334,3 +337,45 @@ No pegar en archivos versionados ni chats públicos:
 | URL `admin-invites-create` | PENDIENTE |
 
 Con esa tabla llena, actualizo este archivo con tus rutas reales y lo dejo listo como fuente oficial de configuración.
+
+
+## 15) Integración con Vercel (datos que necesito de tu cuenta)
+
+Como el frontend vivirá en Vercel, necesito estos datos para cerrar configuración de despliegue y CORS.
+
+### 15.1 Pasos en Vercel
+1. Entrar a `vercel.com` y crear/importar el proyecto del frontend.
+2. En `Project Settings` → `General`, copiar:
+   - `Project Name`
+   - `Framework Preset` (debe quedar Next.js)
+3. En `Project Settings` → `Domains`, copiar:
+   - URL de producción asignada por Vercel (ej. `https://tu-proyecto.vercel.app`)
+   - Dominio personalizado, si ya existe
+4. En `Project Settings` → `Environment Variables`, cargar (sin compartir secretos privados):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### 15.2 Datos que sí debes compartirme
+- URL de producción de Vercel (`https://...vercel.app` o dominio propio).
+- Nombre del proyecto en Vercel.
+- Confirmación de que variables públicas quedaron cargadas en `Production`:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### 15.3 Datos que NO debes compartir
+- Tokens personales de Vercel.
+- `SUPABASE_SERVICE_ROLE_KEY`.
+- Passwords de base de datos.
+
+### 15.4 Plantilla rápida para responderme
+
+| Campo | Valor real |
+|---|---|
+| Vercel project name | PENDIENTE |
+| Vercel production URL | PENDIENTE |
+| Dominio personalizado (si aplica) | PENDIENTE |
+| `NEXT_PUBLIC_SUPABASE_URL` en Production | OK/PENDIENTE |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` en Production | OK/PENDIENTE |
+| CORS final permitido | PENDIENTE |
+
+Con esa información, actualizo este documento con valores finales y dejo cerrada la configuración de infraestructura para iniciar implementación.
