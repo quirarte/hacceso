@@ -370,3 +370,7 @@ LED frontal:
 - Página de monitoreo en tiempo real (2 columnas) dentro del panel en Vercel.
 - Generación de imagen QR con texto inferior y fecha de vencimiento.
 - Edge Functions y firmware según especificación.
+
+## 13. Alternativa de despliegue (hosting clásico)
+
+Si se decide no usar Vercel + Supabase en esta etapa, se documentó una ruta práctica de migración y operación en cPanel + MySQL en `guia-despliegue-cpanel-mysql.md`.
