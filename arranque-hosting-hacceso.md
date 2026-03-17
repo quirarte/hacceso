@@ -165,6 +165,65 @@ Debes ver certificado presentado correctamente y sin errores críticos de verifi
 
 ## 7) Configuración base de PHP para zona horaria
 
+### ¿Qué significa “bootstrap/config” en PHP simple?
+
+En este contexto:
+
+- **bootstrap** = archivo que se ejecuta al inicio de cada request (arranque global).
+- **config** = archivo donde centralizas variables de configuración (BD, zona horaria, etc.).
+
+No es un framework. Son solo archivos tuyos para no repetir código en cada endpoint.
+
+### Estructura mínima sugerida
+
+```text
+public/
+  index.php
+src/
+  bootstrap.php
+  config.php
+```
+
+### Paso a paso
+
+1. Crea `src/config.php`:
+
+```php
+<?php
+
+return [
+    'app_timezone' => 'America/Mexico_City',
+    'db_timezone_sql' => "SET time_zone = '-06:00'",
+];
+```
+
+2. Crea `src/bootstrap.php`:
+
+```php
+<?php
+
+$config = require __DIR__ . '/config.php';
+
+date_default_timezone_set($config['app_timezone']);
+```
+
+3. En tu `public/index.php` (o en cada endpoint si no usas router), carga bootstrap al inicio:
+
+```php
+<?php
+
+require __DIR__ . '/../src/bootstrap.php';
+
+// ...tu lógica de rutas/endpoints
+```
+
+4. Cuando abras conexión MySQL (PDO), ejecuta la zona horaria de BD:
+
+```php
+$pdo->exec($config['db_timezone_sql']);
+```
+
+> Recomendación: para evitar problemas por horario de verano, puedes guardar todo en UTC en BD y convertir a `America/Mexico_City` solo al mostrar en pantalla.
 En tu bootstrap/config inicial de PHP define:
 
 ```php
