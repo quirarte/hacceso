@@ -24,36 +24,56 @@ export APP_TIMEZONE=America/Mexico_City
 export DB_TIMEZONE_SQL="SET time_zone = '-06:00'"
 ```
 
-## 3) ¿De dónde obtengo el `API_KEY`?
+## 3) ¿De dónde obtengo el `API_KEY`? (sin línea de comandos)
 
-La `API_KEY` **la generas tú** al dar de alta el dispositivo (no sale sola de MySQL).
+Si no tienes acceso SSH/terminal, puedes generarla desde navegador con un archivo PHP temporal en `public_html`.
 
-Pasos recomendados:
+### 3.1 Crear archivo temporal `gen_device_key.php`
 
-1. Genera una llave aleatoria (se usa en claro en ESP32):
+Crea este archivo en la raíz pública del hosting y ábrelo en el navegador.
 
-```bash
-php -r 'echo rtrim(strtr(base64_encode(random_bytes(32)), "+/", "-_"), "=") . PHP_EOL;'
+```php
+<?php
+
+declare(strict_types=1);
+
+$key = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+$hash = password_hash($key, PASSWORD_BCRYPT);
+
+header('Content-Type: text/plain; charset=utf-8');
+echo "API_KEY (guardar en ESP32)" . PHP_EOL;
+echo $key . PHP_EOL . PHP_EOL;
+echo "API_KEY_HASH (guardar en devices.api_key_hash)" . PHP_EOL;
+echo $hash . PHP_EOL;
 ```
 
-2. Genera su hash bcrypt para guardar en BD:
+URL ejemplo:
+- `https://hacceso.hacedores.com/gen_device_key.php`
 
-```bash
-php -r '$k=getenv("DEVICE_API_KEY"); if(!$k){fwrite(STDERR,"Define DEVICE_API_KEY\n"); exit(1);} echo password_hash($k, PASSWORD_BCRYPT) . PHP_EOL;'
-```
+### 3.2 Qué hacer con el resultado
 
-3. Inserta/actualiza el dispositivo con `api_key_hash` (nunca en texto plano):
+1. Copia `API_KEY` y guárdala en el firmware ESP32 para enviarla en header `X-API-Key`.
+2. Copia `API_KEY_HASH` y guárdala en MySQL (`devices.api_key_hash`).
+
+SQL ejemplo:
 
 ```sql
 INSERT INTO devices (device_id, api_key_hash, label, is_enabled)
 VALUES ('recepcion-01', 'AQUI_HASH_BCRYPT', 'Recepción principal', 1)
-ON DUPLICATE KEY UPDATE api_key_hash=VALUES(api_key_hash), label=VALUES(label), is_enabled=VALUES(is_enabled);
+ON DUPLICATE KEY UPDATE
+  api_key_hash = VALUES(api_key_hash),
+  label = VALUES(label),
+  is_enabled = VALUES(is_enabled);
 ```
 
-4. Guarda la llave en claro solo en el ESP32 (o secreto seguro):
-   - Header HTTP: `X-API-Key: <API_KEY_EN_CLARO>`
+### 3.3 Seguridad (obligatorio)
 
-> Nota: `validate.php` usa `password_verify(X-API-Key, api_key_hash)` para autenticar el dispositivo.
+Después de generar/copiar la llave:
+1. Elimina `gen_device_key.php` del servidor.
+2. No guardes la `API_KEY` en texto plano dentro de la base de datos.
+3. Si la llave se expone, genera una nueva y actualiza `devices.api_key_hash`.
+
+> Nota: `validate.php` valida con `password_verify(X-API-Key, api_key_hash)`.
 
 ## 4) Pruebas con cURL
 
