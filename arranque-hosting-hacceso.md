@@ -224,6 +224,19 @@ $pdo->exec($config['db_timezone_sql']);
 ```
 
 > Recomendación: para evitar problemas por horario de verano, puedes guardar todo en UTC en BD y convertir a `America/Mexico_City` solo al mostrar en pantalla.
+En tu bootstrap/config inicial de PHP define:
+
+```php
+date_default_timezone_set('America/Mexico_City');
+```
+
+Y en MySQL, al conectar, envía:
+
+```sql
+SET time_zone = '-06:00';
+```
+
+(En horario de verano se recomienda manejar todo en UTC en backend y solo convertir para UI.)
 
 ## 8) Cron jobs sugeridos
 
@@ -244,3 +257,4 @@ Con esto listo, el siguiente bloque técnico es:
 2. Implementar `GET /api/device/health`.
 3. Implementar `POST /api/device/validate` con transacción y `SELECT ... FOR UPDATE`.
 4. Probar con Postman/cURL y luego integrar ESP32.
+
