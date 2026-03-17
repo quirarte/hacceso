@@ -3,8 +3,7 @@
 ## 1) Estructura creada
 
 ```text
-public/
-  api/
+api/
     device/
       health.php
       validate.php

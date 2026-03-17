@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../../../src/bootstrap.php';
+require __DIR__ . '/../../src/bootstrap.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_response(405, ['error' => ['code' => 'METHOD_NOT_ALLOWED', 'message' => 'Método no permitido']]);

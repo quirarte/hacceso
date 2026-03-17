@@ -253,7 +253,7 @@ Como tienes libertad de frecuencia, arranca con:
 
 Con esto listo, el siguiente bloque técnico es:
 
-1. Crear estructura de carpetas PHP simple (`public/api/...`, `src/...`).
+1. Crear estructura de carpetas PHP simple (`api/...`, `src/...`).
 2. Implementar `GET /api/device/health`.
 3. Implementar `POST /api/device/validate` con transacción y `SELECT ... FOR UPDATE`.
 4. Probar con Postman/cURL y luego integrar ESP32.
