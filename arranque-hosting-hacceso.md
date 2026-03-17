@@ -135,6 +135,18 @@ ON DUPLICATE KEY UPDATE label=VALUES(label), is_enabled=VALUES(is_enabled);
 ```
 
 > Importante: `api_key_hash` debe ser bcrypt/argon2 generado en backend, **no texto plano**.
+>
+> Flujo rápido para obtener API key del dispositivo:
+>
+> 1. Genera API key en claro (guárdala para ESP32):
+>    ```bash
+>    php -r 'echo rtrim(strtr(base64_encode(random_bytes(32)), "+/", "-_"), "=") . PHP_EOL;'
+>    ```
+> 2. Genera hash bcrypt de esa key:
+>    ```bash
+>    DEVICE_API_KEY='TU_API_KEY' php -r 'echo password_hash(getenv("DEVICE_API_KEY"), PASSWORD_BCRYPT) . PHP_EOL;'
+>    ```
+> 3. Guarda el hash resultante en `devices.api_key_hash`.
 
 ## 6) ¿Cómo verificar que SSL está activo?
 
@@ -253,7 +265,7 @@ Como tienes libertad de frecuencia, arranca con:
 
 Con esto listo, el siguiente bloque técnico es:
 
-1. Crear estructura de carpetas PHP simple (`public/api/...`, `src/...`).
+1. Crear estructura de carpetas PHP simple (`api/...`, `src/...`).
 2. Implementar `GET /api/device/health`.
 3. Implementar `POST /api/device/validate` con transacción y `SELECT ... FOR UPDATE`.
 4. Probar con Postman/cURL y luego integrar ESP32.
