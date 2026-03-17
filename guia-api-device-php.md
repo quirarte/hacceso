@@ -24,7 +24,38 @@ export APP_TIMEZONE=America/Mexico_City
 export DB_TIMEZONE_SQL="SET time_zone = '-06:00'"
 ```
 
-## 3) Pruebas con cURL
+## 3) ¿De dónde obtengo el `API_KEY`?
+
+La `API_KEY` **la generas tú** al dar de alta el dispositivo (no sale sola de MySQL).
+
+Pasos recomendados:
+
+1. Genera una llave aleatoria (se usa en claro en ESP32):
+
+```bash
+php -r 'echo rtrim(strtr(base64_encode(random_bytes(32)), "+/", "-_"), "=") . PHP_EOL;'
+```
+
+2. Genera su hash bcrypt para guardar en BD:
+
+```bash
+php -r '$k=getenv("DEVICE_API_KEY"); if(!$k){fwrite(STDERR,"Define DEVICE_API_KEY\n"); exit(1);} echo password_hash($k, PASSWORD_BCRYPT) . PHP_EOL;'
+```
+
+3. Inserta/actualiza el dispositivo con `api_key_hash` (nunca en texto plano):
+
+```sql
+INSERT INTO devices (device_id, api_key_hash, label, is_enabled)
+VALUES ('recepcion-01', 'AQUI_HASH_BCRYPT', 'Recepción principal', 1)
+ON DUPLICATE KEY UPDATE api_key_hash=VALUES(api_key_hash), label=VALUES(label), is_enabled=VALUES(is_enabled);
+```
+
+4. Guarda la llave en claro solo en el ESP32 (o secreto seguro):
+   - Header HTTP: `X-API-Key: <API_KEY_EN_CLARO>`
+
+> Nota: `validate.php` usa `password_verify(X-API-Key, api_key_hash)` para autenticar el dispositivo.
+
+## 4) Pruebas con cURL
 
 ### Health
 
@@ -41,7 +72,7 @@ curl -i -X POST https://hacceso.hacedores.com/api/device/validate.php \
   -d '{"device_id":"recepcion-01","code_id":"ABC123"}'
 ```
 
-## 4) Prueba rápida en Postman
+## 5) Prueba rápida en Postman
 
 1. Crear request `POST` a `/api/device/validate.php`.
 2. Header `Content-Type: application/json`.
@@ -55,7 +86,7 @@ curl -i -X POST https://hacceso.hacedores.com/api/device/validate.php \
 }
 ```
 
-## 5) Integración inicial ESP32 (Arduino)
+## 6) Integración inicial ESP32 (Arduino)
 
 ```cpp
 #include <WiFi.h>
@@ -87,6 +118,6 @@ void validarCodigo(const String& codeId) {
 }
 ```
 
-## 6) Nota de concurrencia
+## 7) Nota de concurrencia
 
 `validate.php` usa transacción MySQL y `SELECT ... FOR UPDATE` sobre `invites`, para asegurar transición atómica de `ACTIVE` a `USED`.
