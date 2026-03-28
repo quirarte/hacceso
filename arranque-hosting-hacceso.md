@@ -136,17 +136,23 @@ ON DUPLICATE KEY UPDATE label=VALUES(label), is_enabled=VALUES(is_enabled);
 
 > Importante: `api_key_hash` debe ser bcrypt/argon2 generado en backend, **no texto plano**.
 >
-> Flujo rápido para obtener API key del dispositivo:
+> Si **no tienes línea de comandos** en tu hosting, hazlo así desde cPanel:
 >
-> 1. Genera API key en claro (guárdala para ESP32):
->    ```bash
->    php -r 'echo rtrim(strtr(base64_encode(random_bytes(32)), "+/", "-_"), "=") . PHP_EOL;'
+> 1. Abre **File Manager** y crea `public_html/gen_device_key.php` con este contenido:
+>    ```php
+>    <?php
+>    $apiKey = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+>    $apiKeyHash = password_hash($apiKey, PASSWORD_BCRYPT);
+>
+>    header('Content-Type: text/plain; charset=utf-8');
+>    echo "API_KEY (para ESP32):\n" . $apiKey . "\n\n";
+>    echo "API_KEY_HASH (para MySQL):\n" . $apiKeyHash . "\n";
 >    ```
-> 2. Genera hash bcrypt de esa key:
->    ```bash
->    DEVICE_API_KEY='TU_API_KEY' php -r 'echo password_hash(getenv("DEVICE_API_KEY"), PASSWORD_BCRYPT) . PHP_EOL;'
->    ```
-> 3. Guarda el hash resultante en `devices.api_key_hash`.
+> 2. Abre en navegador: `https://hacceso.hacedores.com/gen_device_key.php`.
+> 3. Copia:
+>    - `API_KEY` → firmware ESP32 (`X-API-Key`)
+>    - `API_KEY_HASH` → columna `devices.api_key_hash`
+> 4. Elimina `gen_device_key.php` inmediatamente por seguridad.
 
 ## 6) ¿Cómo verificar que SSL está activo?
 
