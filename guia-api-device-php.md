@@ -12,6 +12,16 @@ src/
   config.php
 ```
 
+
+## 1.1 Soporte de rutas sin `.php`
+
+Se agregó `api/device/.htaccess` para mapear:
+
+- `/api/device/health` -> `health.php`
+- `/api/device/validate` -> `validate.php`
+
+Así el ESP32 puede consumir rutas limpias sin extensión.
+
 ## 2) Variables de entorno mínimas
 
 ```bash
@@ -80,13 +90,13 @@ Después de generar/copiar la llave:
 ### Health
 
 ```bash
-curl -i https://hacceso.hacedores.com/api/device/health.php
+curl -i https://hacceso.hacedores.com/api/device/health
 ```
 
 ### Validate (ejemplo)
 
 ```bash
-curl -i -X POST https://hacceso.hacedores.com/api/device/validate.php \
+curl -i -X POST https://hacceso.hacedores.com/api/device/validate \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: TU_API_KEY' \
   -d '{"device_id":"recepcion-01","code_id":"ABC123"}'
@@ -94,7 +104,7 @@ curl -i -X POST https://hacceso.hacedores.com/api/device/validate.php \
 
 ## 5) Prueba rápida en Postman
 
-1. Crear request `POST` a `/api/device/validate.php`.
+1. Crear request `POST` a `/api/device/validate`.
 2. Header `Content-Type: application/json`.
 3. Header `X-API-Key: <tu llave en claro>`.
 4. Body raw JSON:
@@ -114,7 +124,7 @@ curl -i -X POST https://hacceso.hacedores.com/api/device/validate.php \
 
 const char* WIFI_SSID = "...";
 const char* WIFI_PASS = "...";
-const char* API_URL = "https://hacceso.hacedores.com/api/device/validate.php";
+const char* API_URL = "https://hacceso.hacedores.com/api/device/validate";
 const char* DEVICE_ID = "recepcion-01";
 const char* API_KEY = "TU_API_KEY";
 

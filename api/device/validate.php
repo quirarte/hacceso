@@ -76,9 +76,9 @@ try {
             $companionsExpected = (int)$invite['companions_expected'];
 
             $updateStmt = $pdo->prepare(
-                'UPDATE invites
-                 SET status = \"USED\", used_at = :used_at, redisplay_until = DATE_ADD(:used_at, INTERVAL 5 MINUTE)
-                 WHERE id = :id AND status = \"ACTIVE\"'
+                "UPDATE invites
+                 SET status = 'USED', used_at = :used_at, redisplay_until = DATE_ADD(:used_at, INTERVAL 5 MINUTE)
+                 WHERE id = :id AND status = 'ACTIVE'"
             );
             $updateStmt->execute([
                 'used_at' => $nowSql,

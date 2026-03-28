@@ -1,0 +1,4 @@
+RewriteEngine On
+
+RewriteRule ^health$ health.php [L,QSA]
+RewriteRule ^validate$ validate.php [L,QSA]
