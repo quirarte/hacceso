@@ -141,3 +141,45 @@ void validarCodigo(const String& codeId) {
 ## 7) Nota de concurrencia
 
 `validate.php` usa transacción MySQL y `SELECT ... FOR UPDATE` sobre `invites`, para asegurar transición atómica de `ACTIVE` a `USED`.
+
+
+## 8) Siguiente paso implementado: emitir pases (admin)
+
+Se agregó endpoint para crear pases desde panel/admin:
+
+- `POST /api/admin/invites_create.php`
+- Header requerido: `X-Issuer-Key`
+
+Body JSON:
+
+```json
+{
+  "visitor_name": "Ada Lovelace",
+  "valid_from": "2026-03-28T10:00:00-06:00",
+  "valid_to": "2026-03-28T18:00:00-06:00",
+  "companions_expected": 1,
+  "visitor_phone": "+5215512345678",
+  "visitor_email": "ada@example.com"
+}
+```
+
+Respuesta exitosa (`201`):
+
+```json
+{
+  "id": "uuid",
+  "code_id": "token_qr",
+  "status": "ACTIVE",
+  "visitor_name": "Ada Lovelace",
+  "companions_expected": 1,
+  "valid_from": "2026-03-28T16:00:00+00:00",
+  "valid_to": "2026-03-29T00:00:00+00:00",
+  "issued_by_employee_uid": "emp-uid",
+  "issued_at": "2026-03-28T15:43:00+00:00"
+}
+```
+
+Notas:
+- El endpoint valida `X-Issuer-Key` contra hashes `bcrypt` en `issuer_keys.api_key_hash`.
+- Genera `code_id` aleatorio seguro (base64url) para el QR.
+- Inserta el pase con `status = ACTIVE`, `issued_at`, `created_at` y `updated_at` desde servidor.

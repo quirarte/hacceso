@@ -35,6 +35,17 @@ function request_header(string $name): ?string
     return is_string($value) && $value !== '' ? $value : null;
 }
 
+function normalize_optional_string(mixed $value): ?string
+{
+    if (!is_string($value)) {
+        return null;
+    }
+
+    $normalized = trim($value);
+
+    return $normalized === '' ? null : $normalized;
+}
+
 function db_pdo(array $config): PDO
 {
     $db = $config['db'];
@@ -68,4 +79,9 @@ function uuid_v4(): string
     $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
 
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+}
+
+function random_token(int $byteLength = 24): string
+{
+    return rtrim(strtr(base64_encode(random_bytes($byteLength)), '+/', '-_'), '=');
 }
