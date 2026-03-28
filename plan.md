@@ -1,376 +1,386 @@
-# plan.md — Sistema de Pases de Acceso con QR (Hacedores)
+# plan.md — Análisis funcional y lógico del sistema de pases de acceso con QR
 
-[No verificado] Este documento consolida definiciones, requerimientos y especificaciones acordadas. No puedo verificar inventario de hardware, comportamiento exacto del buzzer del lector en tu unidad, ni tu infraestructura de red o despliegue real en Supabase y Vercel sin pruebas en sitio.
+## 1) Propósito del sistema
 
-## 1. Objetivo
+Definir de forma integral la lógica de un sistema de control de acceso para visitantes mediante pases temporales representados por códigos QR, cubriendo:
 
-Diseñar, construir e implementar un sistema de control de acceso para el edificio del makerspace, basado en pases temporales emitidos por Hacedores, entregados al visitante como código QR y validados en recepción mediante un dispositivo físico conectado a Internet.
+- Emisión de pases.
+- Validación en punto de acceso.
+- Gestión operativa (listado, revocación, monitoreo).
+- Registro auditable de eventos.
+- Comportamiento del dispositivo físico de recepción (incluyendo **ESP** y lector QR **M5Stack**).
 
-## 2. Actores
+> Este documento es **agnóstico de plataforma y lenguaje**. Describe capacidades, reglas de negocio, contratos lógicos y consideraciones de operación.
 
-- **Emisor (staff Hacedores)**: crea y emite pases desde el panel.
-- **Visitante**: recibe el QR y lo presenta en recepción.
-- **Vigilante/recepción**: observa el display trasero del dispositivo y autoriza el acceso.
-- **Equipo piso 8**: monitorea en tiempo real quién está por llegar tras un escaneo aprobado.
-- **Dispositivo**: escanea QR, consulta servidor, muestra resultado al vigilante.
-- **Servidor (Supabase)**: almacena pases y eventos, aplica reglas, registra uso.
-- **Base de datos de empleados (Hacedores)**: fuente de verdad para datos del empleado, identificada por UID.
+---
 
-## 3. Requerimientos funcionales
+## 2) Objetivos funcionales
 
-### 3.1 Emisión de pases (panel web)
-El sistema debe permitir que el emisor capture o produzca los siguientes datos:
+1. Permitir que personal autorizado emita pases de visitante con vigencia temporal.
+2. Entregar un QR que no exponga datos sensibles.
+3. Validar el pase en recepción con respuesta inmediata y homogénea para el visitante.
+4. Mostrar información útil al personal de vigilancia sin revelar estado al visitante.
+5. Informar en tiempo real al equipo de destino sobre visitantes en camino.
+6. Mantener trazabilidad completa de escaneos y decisiones del sistema.
+7. Facilitar operación diaria: consulta de pases, estados, historial y revocación.
 
-1) **Nombre del visitante autorizado**  
-2) **Rango de vigencia**: fecha y hora de inicio (`valid_from`) y fecha y hora de fin (`valid_to`)  
-3) **Acompañantes esperados**: número de acompañantes que vienen con el visitante (informativo)  
-4) **UID del empleado emisor**: se registra el UID, el nombre se obtiene por cruce con la base de empleados  
-5) **Timestamp de emisión** (`issued_at`) generado por servidor  
-6) **Teléfono del visitante** (opcional)  
-7) **Email del visitante** (opcional)
+---
 
-Al emitir el pase:
-- El sistema genera un **código QR**.
-- El QR contiene únicamente un **token aleatorio** `code_id` (no contiene nombre ni vigencias).
-- El sistema genera una **imagen del QR** para enviar al visitante, ver sección 9.4.
+## 3) Actores y responsabilidades
 
-### 3.2 Envío del QR al visitante
-- El emisor envía la imagen del QR por WhatsApp o email (manual).
-- Automatización de envío se considera opcional para una etapa posterior.
+- **Emisor interno**: crea pases y, cuando aplica, los revoca.
+- **Visitante**: presenta QR en recepción.
+- **Recepción/vigilancia**: observa resultado detallado en pantalla trasera y decide el acceso físico.
+- **Equipo destino**: monitorea en tiempo real visitantes próximos a llegar.
+- **Dispositivo de recepción**: lee QR, consulta validación, emite señales y muestra resultado.
+- **Servicio de validación**: aplica reglas de negocio de vigencia/estado y registra eventos.
+- **Fuente de identidad interna de empleados**: permite asociar emisor por UID con su nombre de despliegue.
 
-### 3.3 Validación en recepción (dispositivo)
-Flujo:
-1) El visitante inserta el celular con el QR visible en un **dock oscuro** del dispositivo.
-2) El dispositivo **lee** el QR mediante un lector 2D conectado por UART.
-3) El dispositivo consulta la nube para validar el `code_id`.
-4) El dispositivo despliega en el **display trasero**:
-   - Si OK: nombre del visitante y acompañantes esperados
-   - Si error: mensaje específico según el caso
-5) El servidor registra el evento y marca el pase como usado según reglas.
+---
 
-### 3.4 Mensajes de error (display trasero)
-- **"código inexistente"** si no existe el `code_id`
-- **"código vencido"** si está fuera de vigencia
-- **"código ya utilizado"** si ya pasó la ventana de redisplay
-- **"código revocado"** si fue revocado (si se implementa)
+## 4) Datos de negocio definidos
 
-### 3.5 Ventana de reescaneo (5 minutos desde el primer OK)
-Regla final:
-- Tras el **primer OK** (`OK_FIRST`), el pase cambia a estado **USED**.
-- El mismo código puede escanearse varias veces dentro de una ventana de **5 minutos contados desde el primer OK**.
-- Dentro de esa ventana, el vigilante debe seguir viendo un resultado OK (`OK_REDISPLAY`).
-- Pasados los 5 minutos, el resultado debe ser **"código ya utilizado"**.
+### 4.1 Datos de un pase
 
-### 3.6 Privacidad del visitante y retroalimentación frontal
-- El visitante **no debe ver información del pase**.
-- El display para el vigilante está en la parte posterior del dispositivo.
-- En el frente, el visitante solo recibe:
-  - **1 LED verde**
-  - **1 beep**
+- Identificador interno del pase.
+- `code_id` aleatorio único (contenido del QR).
+- Nombre del visitante.
+- Teléfono del visitante (opcional).
+- Correo del visitante (opcional).
+- Acompañantes esperados (número entero, informativo para recepción).
+- Inicio de vigencia (`valid_from`).
+- Fin de vigencia (`valid_to`).
+- UID de empleado emisor (`issued_by_employee_uid`).
+- Fecha/hora de emisión (`issued_at`, asignada por servidor).
+- Estado del pase (`ACTIVE`, `USED`, `REVOKED`).
+- Primera fecha/hora de uso (`used_at`, cuando aplica).
+- Límite de redisplay (`redisplay_until`, cuando aplica).
 
-Regla final:
-- El beep y el LED deben ser **exactamente iguales** para todos los resultados.
-- Se activan **solo cuando hay lectura exitosa del QR** (cuando el lector entrega un `code_id`).
+### 4.2 Datos de evento de escaneo
 
-## 4. Requerimientos del display trasero
+- Identificador interno del evento.
+- `code_id` escaneado.
+- Identificador de dispositivo (`device_id`).
+- Fecha/hora del escaneo (`scanned_at`).
+- Resultado lógico (`OK_FIRST`, `OK_REDISPLAY`, `INEXISTENT`, `EXPIRED`, `REVOKED`, `USED`).
+- Latencia de validación (opcional).
+- Detalle técnico de error (opcional).
 
-### 4.1 Estado por defecto (reposo)
-En reposo, el display trasero muestra:
-- **"Activo"** si el dispositivo está conectado y las pruebas de conectividad y funcionamiento son exitosas.
-- **"Inactivo"** si las pruebas fallan repetidamente.
+### 4.3 Datos de dispositivo
 
-### 4.2 Estado de resultado del pase
-- Tras un escaneo, el display muestra el resultado por máximo **60 segundos**.
-- Si se escanea otro código antes de cumplir el minuto, el display debe **cambiar inmediatamente** al nuevo resultado.
-- Si se cumple el minuto sin escaneos, vuelve a reposo ("Activo" o "Inactivo").
+- `device_id` único.
+- Credencial de autenticación almacenada como hash.
+- Etiqueta descriptiva.
+- Indicador de habilitación.
+- Fecha de alta.
 
-## 5. Conectividad y salud del dispositivo
+### 4.4 Datos de llave de emisor
 
-### 5.1 Chequeo Activo o Inactivo
-- Se usará un ping lógico por HTTPS hacia:
-  - `GET /device/health`
-- Criterio recomendado:
-  - Intervalo: 10 s
-  - Fallos consecutivos para "Inactivo": 3
-  - Un éxito vuelve a "Activo"
+- Identificador de llave.
+- UID de empleado asociado.
+- Hash de llave.
+- Indicador de habilitación.
+- Fecha de alta.
 
-## 6. Arquitectura del sistema
+### 4.5 Datos de empleado (fuente interna)
 
-### 6.1 Componentes
-- **Supabase Postgres**: base de datos principal del sistema de pases
-- **Supabase Edge Functions (TypeScript)**:
-  - `POST /device/validate`
-  - `GET /device/health`
-  - Endpoints admin para crear, listar y revocar pases (ver sección 8.3)
-- **Panel web admin**: hospedado en **Vercel**, desarrollado en **TypeScript** (Next.js o Vite)
-- **Página de monitoreo en tiempo real**: parte del panel, ver sección 9.5
-- **Dispositivo**: ESP32 + lector QR por UART + LCD 1602 I2C + LED frontal
-- **Base de empleados**:
-  - Tabla o fuente `employees` con UID como llave primaria
-  - El sistema de pases guarda solo el UID y cruza para mostrar nombres
+Campos mínimos:
 
-### 6.2 Seguridad y control de acceso (sin subsistema de usuarios)
-Se acordó no implementar un módulo completo de usuarios dentro del sistema de pases.
+- UID.
+- Nombre de despliegue.
+- Indicador activo/inactivo (si existe en la fuente).
 
-En su lugar:
-- **API key por emisor** asociada a un **employee_uid**.
-- **API key por dispositivo** para validar pases desde el hardware.
+---
 
-Reglas:
-- El panel envía `X-Issuer-Key` en operaciones admin.
-- El servidor valida la key y obtiene el `employee_uid` emisor.
-- El servidor guarda `issued_by_employee_uid` en el pase.
-- El nombre del empleado se obtiene por cruce con la tabla `employees`.
-- El dispositivo envía `X-API-Key` (device key) en validaciones.
-- Todo por HTTPS.
+## 5) Flujo funcional de extremo a extremo
 
-## 7. Modelo de datos (Supabase Postgres)
+## 5.1 Emisión del pase
 
-### 7.1 Tabla `invites`
-Campos:
-- `id` UUID (PK)
-- `code_id` TEXT UNIQUE (token aleatorio, lo que va en el QR)
-- `visitor_name` TEXT
-- `visitor_phone` TEXT NULL (opcional)
-- `visitor_email` TEXT NULL (opcional)
-- `companions_expected` INT
-- `valid_from` TIMESTAMPTZ
-- `valid_to` TIMESTAMPTZ
+1. Emisor captura datos del visitante y vigencia.
+2. Servicio valida consistencia de datos.
+3. Servicio identifica al emisor por su credencial.
+4. Servicio crea pase con estado `ACTIVE`.
+5. Servicio genera `code_id` aleatorio único.
+6. Se construye QR cuyo contenido es **solo** `code_id`.
+7. Se genera imagen de QR con texto operativo de uso y vencimiento.
+8. Emisor comparte imagen al visitante por el canal que defina la operación.
 
-Emisión:
-- `issued_by_employee_uid` UUID o TEXT (según el UID real)
-- `issued_at` TIMESTAMPTZ (servidor)
+## 5.2 Presentación y lectura de QR en recepción
 
-Uso:
-- `status` TEXT (valores: `ACTIVE`, `USED`, `REVOKED`)
-- `used_at` TIMESTAMPTZ NULL
-- `redisplay_until` TIMESTAMPTZ NULL (se fija como `used_at + 5 minutes`)
+1. Visitante coloca el QR en el dock del equipo.
+2. Lector QR captura y entrega `code_id` al ESP por interfaz serial.
+3. ESP dispara señal frontal estandarizada (LED + beep) al detectar lectura válida de QR.
+4. ESP solicita validación al servicio remoto con `device_id` y `code_id`.
+5. Servicio responde resultado lógico.
+6. ESP actualiza pantalla trasera con resultado correspondiente.
+7. Servicio registra el evento de escaneo.
 
-Notas:
-- "vencido" se calcula como `now > valid_to` (no requiere campo `EXPIRED`).
+## 5.3 Reglas de decisión en validación
 
-### 7.2 Tabla `scan_events`
-- `id` UUID (PK)
-- `code_id` TEXT
-- `device_id` TEXT
-- `scanned_at` TIMESTAMPTZ
-- `result` TEXT (valores sugeridos):
-  - `OK_FIRST`
-  - `OK_REDISPLAY`
-  - `INEXISTENT`
-  - `EXPIRED`
-  - `REVOKED`
-  - `USED`
-Opcional:
-- `latency_ms` INT
-- `error_detail` TEXT
+Orden recomendado de evaluación:
 
-### 7.3 Tabla `devices`
-- `device_id` TEXT UNIQUE
-- `api_key_hash` TEXT
-- `label` TEXT
-- `is_enabled` BOOLEAN
-- `created_at` TIMESTAMPTZ
+1. Si no existe `code_id` -> `INEXISTENT`.
+2. Si pase está revocado -> `REVOKED`.
+3. Si fuera de vigencia -> `EXPIRED`.
+4. Si está `ACTIVE` y en vigencia -> `OK_FIRST`, y transición atómica a `USED` con:
+   - `used_at = ahora`
+   - `redisplay_until = used_at + 5 minutos`
+5. Si está `USED`:
+   - Si `ahora <= redisplay_until` -> `OK_REDISPLAY`
+   - Si `ahora > redisplay_until` -> `USED`
 
-### 7.4 Tabla `issuer_keys` (API keys por emisor)
-- `issuer_key_id` UUID (PK)
-- `employee_uid` UUID o TEXT (FK lógica a `employees.uid`)
-- `api_key_hash` TEXT
-- `is_enabled` BOOLEAN
-- `created_at` TIMESTAMPTZ
+### 5.3.1 Regla crítica: ventana de redisplay (5 minutos)
 
-### 7.5 Tabla `employees` (fuente de verdad)
-Campos mínimos para cruce:
-- `uid`
-- `display_name` (o equivalente)
-- `is_active` (opcional)
+- El primer aprobado fija una ventana de 5 minutos.
+- Durante esa ventana, reescaneos del mismo código deben seguir marcando aprobado (`OK_REDISPLAY`).
+- Fuera de esa ventana, el mismo código debe marcar `USED`.
 
-No puedo verificar esto. La estructura exacta depende de tu base de empleados.
+---
 
-## 8. API (Supabase Edge Functions)
+## 6) Comportamiento de interfaz y retroalimentación
 
-### 8.1 `GET /device/health`
-Propósito:
-- Determinar estado "Activo" o "Inactivo" del dispositivo.
+### 6.1 Principio de privacidad frente al visitante
 
-Respuesta:
-- HTTP 200 con JSON simple `{ "ok": true }` si está operativo.
+El visitante no debe inferir si su pase fue aprobado o rechazado mediante señales frontales.
 
-### 8.2 `POST /device/validate`
-Entrada (JSON):
+### 6.2 Señal frontal (visitante)
+
+- Siempre el mismo patrón para cualquier resultado de validación.
+- Activación únicamente cuando hubo lectura válida de QR.
+- No diferenciar colores, duración ni número de beeps por tipo de resultado.
+
+### 6.3 Pantalla trasera (vigilancia)
+
+#### Reposo
+
+- Mostrar `Activo` cuando la salud de conexión es correcta.
+- Mostrar `Inactivo` cuando hay fallas repetidas de salud.
+
+#### Resultado de escaneo
+
+- Mostrar resultado detallado por hasta 60 segundos.
+- Si llega un nuevo escaneo antes de 60 segundos, reemplazar inmediatamente.
+- Al expirar ese tiempo sin nuevos escaneos, volver a reposo.
+
+#### Mensajería mínima
+
+- `código inexistente`
+- `código vencido`
+- `código ya utilizado`
+- `código revocado`
+- En aprobados: nombre del visitante y acompañantes esperados.
+
+---
+
+## 7) Monitoreo en tiempo real
+
+Debe existir una vista operacional en dos bloques:
+
+1. **Visitantes esperados vigentes**:
+   - nombre,
+   - acompañantes esperados,
+   - vencimiento,
+   - estado visual de urgencia (por ejemplo: por vencer pronto).
+
+2. **Escaneos en vivo**:
+   - fecha/hora,
+   - resultado,
+   - nombre de visitante cuando aplique.
+
+Regla de visibilidad destacada:
+
+- Cuando el resultado sea `OK_FIRST` o `OK_REDISPLAY`, mostrar de forma prominente al visitante “en camino”.
+
+---
+
+## 8) Funciones administrativas definidas
+
+1. Crear pase.
+2. Listar pases con filtros.
+3. Ver detalle de pase y eventos asociados.
+4. Revocar pase (idempotente: repetir revocación no debe romper flujo).
+5. Consultar eventos recientes para operación y monitoreo.
+6. Consultar salud para estado operativo del dispositivo.
+
+---
+
+## 9) Contratos lógicos de interfaces de servicio
+
+### 9.1 Salud de dispositivo
+
+- Entrada: solicitud simple de verificación.
+- Salida esperada: confirmación de servicio operativo (`ok=true`).
+- Uso: determinar estado `Activo/Inactivo` en reposo del dispositivo.
+
+### 9.2 Validación de pase
+
+Entrada mínima:
+
 - `device_id`
 - `code_id`
+- credencial del dispositivo
 
-Headers:
-- `X-API-Key`: API key del dispositivo
+Salida mínima:
 
-Salida (JSON):
-- `result`: `OK_FIRST`, `OK_REDISPLAY`, `INEXISTENT`, `EXPIRED`, `REVOKED`, `USED`
-- Si OK:
-  - `visitor_name`
-  - `companions_expected`
+- `result`
+- si aprobado: `visitor_name`, `companions_expected`
 
-Lógica (atómica):
-1) Si `code_id` no existe: `INEXISTENT`, registrar `scan_events`
-2) Si `status == REVOKED`: `REVOKED`, registrar `scan_events`
-3) Si `now < valid_from` o `now > valid_to`: `EXPIRED`, registrar `scan_events`
-4) Si `status == ACTIVE` y dentro de vigencia:
-   - `OK_FIRST`
-   - en la misma transacción:
-     - `status = USED`
-     - `used_at = now`
-     - `redisplay_until = now + 5 minutes`
-   - registrar `scan_events` como `OK_FIRST`
-5) Si `status == USED`:
-   - si `now <= redisplay_until`: `OK_REDISPLAY`, registrar evento, no modificar tiempos
-   - si `now > redisplay_until`: `USED`, registrar evento
+### 9.3 Creación de pase
 
-### 8.3 Endpoints admin (panel en Vercel)
-Autenticación:
-- Header `X-Issuer-Key` (API key del emisor)
+Entrada mínima:
 
-#### `POST /admin/invites/create`
-Entrada:
-- `visitor_name`
-- `companions_expected`
-- `valid_from`
-- `valid_to`
-- `visitor_phone` (opcional)
-- `visitor_email` (opcional)
+- datos de visitante,
+- vigencia,
+- opcionales de contacto,
+- credencial de emisor.
 
-Acción:
-- Validar `X-Issuer-Key` contra `issuer_keys` (hash)
-- Obtener `employee_uid` asociado
-- Crear registro en `invites`:
-  - `code_id` aleatorio
-  - `status = ACTIVE`
-  - `issued_by_employee_uid = employee_uid`
-  - `issued_at = now()` (servidor)
+Salida mínima:
 
-Salida:
-- `invite_id`
-- `code_id`
-- `issued_by_employee_uid`
-- `issued_at`
+- identificador de pase,
+- `code_id`,
+- UID del emisor resuelto,
+- fecha/hora de emisión.
 
-#### `GET /admin/invites`
-- Lista pases con filtros.
-- Para mostrar el nombre del emisor en UI, se cruza `issued_by_employee_uid` con `employees`.
+### 9.4 Listado de pases
 
-#### `GET /admin/events/recent` (para monitoreo)
-- Devuelve los últimos N eventos de escaneo y permite filtrar por rango de tiempo.
-- Alternativa: usar suscripción en tiempo real, ver sección 9.5.
+- Debe soportar filtros por estado temporal y estado lógico.
+- Debe incluir datos base y datos de emisión.
+- Debe permitir enriquecer nombre del emisor vía UID.
 
-#### `POST /admin/invites/{invite_id}/revoke` (opcional)
-- Revoca el pase (`status = REVOKED`).
+### 9.5 Eventos recientes
 
-## 9. Panel web (Vercel)
+- Debe retornar escaneos más recientes con filtros de tiempo.
+- Debe servir tanto para refresco periódico como para actualización en vivo.
 
-### 9.1 Hospedaje
-- Panel hospedado en Vercel.
-- Consume Edge Functions de Supabase por HTTPS.
+### 9.6 Revocación
 
-### 9.2 Acceso y registro del emisor
-- Cada empleado usa su API key.
-- El panel envía `X-Issuer-Key`.
-- El servidor determina y registra `issued_by_employee_uid`.
+- Cambia estado a `REVOKED`.
+- Si ya lo estaba, responde de forma consistente sin error funcional.
 
-### 9.3 UI principal
-- Crear pase
-- Mostrar QR y permitir descarga
-- Listados con filtros: vigentes, vencidos, utilizados, revocados
-- Detalle de pase: datos, `used_at`, `redisplay_until`, eventos
-- Revocar (opcional)
+---
 
-### 9.4 Generación de imagen QR (con texto)
-El módulo que genera la imagen del QR debe incluir texto debajo del código:
+## 10) Reglas de seguridad y control
 
-Líneas obligatorias:
-1) `Escanea este QR en la recepción`
-2) `para acceder al piso 8 de Hacedores.`
-3) `Vence: [Fecha y hora de vencimiento del pase]`
+1. Separación de credenciales por rol:
+   - credenciales de emisor,
+   - credenciales de dispositivo.
+2. Almacenamiento de credenciales solo como hash.
+3. Generación de credenciales con entropía criptográfica suficiente.
+4. Transmisión cifrada extremo a extremo.
+5. Restricción de origen para operaciones administrativas.
+6. Sin exposición pública directa de tablas de negocio.
+7. Registro auditable para toda validación y acción crítica.
 
-Notas:
-- La fecha y hora deben corresponder a `valid_to` del pase.
-- El QR en sí debe contener solo `code_id`.
+---
 
-Lugar de generación:
-- Puede generarse en el panel (frontend) o en un endpoint del servidor, siempre que:
-  - el contenido del QR sea `code_id`
-  - el texto inferior refleje el vencimiento real del pase
+## 11) Reglas de tiempo y vigencia
 
-### 9.5 Página de monitoreo en tiempo real
-Debe existir una opción en el panel para abrir una página de monitoreo en tiempo real con dos columnas:
+1. Transporte de fecha/hora en formato estandarizado.
+2. Visualización en zona horaria de negocio definida por operación.
+3. `valid_to` se considera inclusivo.
+4. `valid_from` puede estar en pasado.
+5. Toda decisión de vigencia se hace con reloj del servidor.
 
-Columna izquierda, "Pases vigentes, visitantes esperados":
-- Lista de pases vigentes, ordenados por `valid_to` ascendente o por creación reciente.
-- Cada ítem muestra al menos:
-  - `visitor_name`
-  - `companions_expected`
-  - `valid_to`
-  - un estado visual (vigente, por vencer pronto, etc.)
+---
 
-Columna derecha, "Escaneos en tiempo real":
-- Muestra en tiempo real los eventos que suceden en el scanner.
-- Cada evento muestra al menos:
-  - timestamp `scanned_at`
-  - resultado (`OK_FIRST`, `OK_REDISPLAY`, `EXPIRED`, etc.)
-  - `visitor_name` si el pase existe, para que el equipo del piso 8 identifique al visitante.
+## 12) Requisitos del QR y su representación
 
-Al producirse un pase aprobado:
-- Si llega un evento `OK_FIRST` o `OK_REDISPLAY`, debe aparecer de manera muy visible:
-  - el nombre del visitante que está subiendo por elevador
-  - y opcionalmente un aviso tipo "En camino al piso 8"
+1. El contenido codificado debe ser exclusivamente `code_id`.
+2. Debe existir versión visual descargable/compartible.
+3. Texto operativo mínimo visible bajo el QR:
+   - instrucción de escaneo en recepción,
+   - contexto de acceso al destino,
+   - fecha/hora de vencimiento real del pase.
 
-Implementación sugerida:
-- Usar suscripción en tiempo real a inserciones en `scan_events`, o usar polling de baja latencia contra `/admin/events/recent`.
-- La lógica de "pases vigentes" se calcula con `status=ACTIVE` y ahora dentro de vigencia.
+---
 
-## 10. Hardware del dispositivo (recepción)
+## 13) Dispositivo físico: ESP + lector QR M5Stack
 
-### 10.1 Componentes acordados
-- ESP32 DevKitC V4, módulo ESP32 WROOM 32D
-- Lector M5Stack Unit QRCode en UART
-- Display trasero LCD 1602 I2C (PCF8574)
-- LED verde frontal
-- Dock oscuro, posición fija, corriente fija
-- Buzzer preferentemente interno del lector si cumple la regla
+## 13.1 Componentes contemplados
 
-### 10.2 Alimentación y niveles lógicos
-- Riel de 5V común (fuente con margen).
-- El ESP32 usa lógica 3.3V en GPIOs.
-- No puedo verificar el nivel del TX del lector en tu unidad, confirmar y si fuera 5V, adaptar nivel hacia RX del ESP32.
+- Controlador **ESP**.
+- Lector QR **M5Stack** por interfaz serial.
+- Pantalla trasera para vigilancia.
+- Indicador luminoso frontal.
+- Señal acústica frontal (o del lector si cumple uniformidad).
+- Dock oscuro de lectura para estabilidad de escaneo.
 
-### 10.3 Conexiones lógicas recomendadas
-UART lector (UART2):
-- RX2 ESP32: GPIO16
-- TX2 ESP32: GPIO17 (opcional)
+## 13.2 Comportamiento lógico del firmware
 
-I2C LCD:
-- SDA: GPIO21
-- SCL: GPIO22
+1. Inicializar conectividad y periféricos.
+2. Ejecutar ciclo periódico de salud para estado en reposo.
+3. Escuchar continuamente tramas de lector QR.
+4. Al detectar `code_id` válido:
+   - disparar señal frontal uniforme,
+   - invocar validación remota,
+   - mostrar resultado trasero,
+   - aplicar temporizador de retorno a reposo.
+5. Si falla conectividad en validación:
+   - mostrar mensaje operativo (por ejemplo, “No hay internet”),
+   - mantener ciclo de recuperación.
 
-LED frontal:
-- GPIO seguro + resistencia + LED a GND.
+## 13.3 Resiliencia recomendada
 
-## 11. Firmware ESP32 (Arduino IDE)
+- Timeout corto por solicitud.
+- Reintentos limitados con backoff incremental.
+- Estado degradado claramente visible para operación.
 
-### 11.1 Arquitectura
-- Lectura UART, cuando se decodifica un QR:
-  - LED ON por tiempo fijo
-  - beep del lector, si es consistente
-- Validación HTTPS contra `/device/validate`
-- Display trasero:
-  - reposo Activo o Inactivo (según health)
-  - resultado por 60 s, reemplazo inmediato por nuevo escaneo
+---
 
-## 12. Entregables
+## 14) Estados y transiciones del pase
 
-- Esquema de BD en Supabase, incluyendo soporte para `visitor_phone` y `visitor_email`.
-- Página de monitoreo en tiempo real (2 columnas) dentro del panel en Vercel.
-- Generación de imagen QR con texto inferior y fecha de vencimiento.
-- Edge Functions y firmware según especificación.
+### Estados
 
-## 13. Alternativa de despliegue (hosting clásico)
+- `ACTIVE`
+- `USED`
+- `REVOKED`
 
-Si se decide no usar Vercel + Supabase en esta etapa, se documentó una ruta práctica de migración y operación en cPanel + MySQL en `guia-despliegue-cpanel-mysql.md`.
+### Transiciones
+
+- `ACTIVE -> USED` al primer aprobado en vigencia.
+- `ACTIVE -> REVOKED` por acción administrativa.
+- `USED -> REVOKED` permitido solo si la política operativa lo requiere (opcional, definir explícitamente).
+- No existe transición de regreso a `ACTIVE`.
+
+---
+
+## 15) Casos funcionales que el sistema debe resolver
+
+1. Alta de pase válido y QR utilizable.
+2. Escaneo exitoso inicial (`OK_FIRST`).
+3. Reescaneo dentro de ventana (`OK_REDISPLAY`).
+4. Reescaneo fuera de ventana (`USED`).
+5. Código inexistente (`INEXISTENT`).
+6. Pase fuera de vigencia (`EXPIRED`).
+7. Pase revocado (`REVOKED`).
+8. Monitoreo en vivo de escaneos aprobados y rechazados.
+9. Conmutación de estado de salud del dispositivo (`Activo/Inactivo`).
+10. Manejo de pérdida de conectividad sin bloquear operación local de lectura.
+
+---
+
+## 16) Consideraciones operativas
+
+1. Mantener retención de eventos suficiente para auditoría.
+2. Definir responsable de administración de llaves y rotación manual.
+3. Definir protocolo de soporte para fallas de conectividad en recepción.
+4. Establecer métricas objetivo de latencia/disponibilidad de validación.
+5. Documentar procedimiento de alta/baja de dispositivos.
+6. Asegurar pruebas periódicas del ciclo completo (emisión -> escaneo -> monitoreo).
+
+---
+
+## 17) Definición de completitud funcional
+
+Se considera completo cuando, como mínimo, se verifica:
+
+1. Emisión correcta con QR y vencimiento visible.
+2. Aplicación exacta de reglas de estado y vigencia.
+3. Registro de todos los eventos de escaneo.
+4. Visualización trasera correcta por resultado.
+5. Señal frontal uniforme sin filtrar resultado.
+6. Monitoreo en tiempo real de visitantes y escaneos.
+7. Revocación operativa e idempotente.
+8. Funcionamiento de salud `Activo/Inactivo` en dispositivo.
+9. Integración efectiva de **ESP + lector QR M5Stack** en flujo real.
+
