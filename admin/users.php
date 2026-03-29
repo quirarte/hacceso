@@ -625,8 +625,8 @@ try {
     <?php endif; ?>
 
     <script src="/admin/assets/js/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-    <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
         (function () {
             const codeNode = document.getElementById('new-pass-code-id');
@@ -693,6 +693,23 @@ try {
                 downloadBtn.style.display = 'inline-block';
             }
 
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
+
             generateBtn.addEventListener('click', function () {
                 if (!codeId) {
                     return;
@@ -704,18 +721,57 @@ try {
                 }
 
                 container.textContent = 'Generando QR...';
+                if (typeof QRCode.toDataURL === 'function') {
+                    QRCode.toDataURL(codeId, {
+                        errorCorrectionLevel: 'M',
+                        width: 320,
+                        margin: 2,
+                    }, function (error, url) {
+                        if (error || !url) {
+                            container.textContent = 'No se pudo generar el QR.';
+                            return;
+                        }
+                        renderQrImage(url);
+                    });
+                    return;
+                }
 
-                QRCode.toDataURL(codeId, {
-                    errorCorrectionLevel: 'M',
-                    width: 320,
-                    margin: 2,
-                }, function (error, url) {
-                    if (error || !url) {
-                        container.textContent = 'No se pudo generar el QR.';
-                        return;
-                    }
-                    renderQrImage(url);
-                });
+                if (typeof QRCode === 'function') {
+                    container.innerHTML = '';
+                    const holder = document.createElement('div');
+                    holder.style.display = 'inline-block';
+                    holder.style.border = '1px solid #ddd';
+                    holder.style.background = '#fff';
+                    holder.style.padding = '6px';
+                    container.appendChild(holder);
+
+                    new QRCode(holder, {
+                        text: codeId,
+                        width: 320,
+                        height: 320,
+                    });
+
+                    window.setTimeout(function () {
+                        const image = holder.querySelector('img');
+                        if (image && image.src) {
+                            latestDataUrl = image.src;
+                            downloadBtn.style.display = 'inline-block';
+                            return;
+                        }
+
+                        const canvas = holder.querySelector('canvas');
+                        if (canvas && typeof canvas.toDataURL === 'function') {
+                            latestDataUrl = canvas.toDataURL('image/png');
+                            downloadBtn.style.display = 'inline-block';
+                            return;
+                        }
+
+                        container.textContent = 'No se pudo generar el QR con la librería instalada.';
+                    }, 50);
+                    return;
+                }
+
+                container.textContent = 'La librería QR cargada no es compatible.';
             });
 
             downloadBtn.addEventListener('click', function () {

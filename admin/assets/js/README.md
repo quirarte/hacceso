@@ -1,6 +1,6 @@
 # qrcode.min.js
 
-Este directorio debe contener `qrcode.min.js` (librería `qrcode@1.5.4`) para generar los QR localmente en el navegador, sirviendo el archivo desde tu propio servidor.
+Este directorio debe contener `qrcode.min.js` (librería `qrcodejs@1.0.0`) para generar los QR localmente en el navegador, sirviendo el archivo desde tu propio servidor.
 
 ## Ruta esperada por la app
 
@@ -8,15 +8,13 @@ Este directorio debe contener `qrcode.min.js` (librería `qrcode@1.5.4`) para ge
 
 ## ¿De dónde obtenerlo?
 
-El archivo minificado normalmente no vive en el repo fuente de GitHub; se distribuye en el paquete de npm.
+El archivo minificado existe como artefacto de `qrcodejs`.
 
-### Opción 1: descargar el paquete npm y extraer `build/qrcode.min.js`
+### Opción 1: descargarlo desde CDNJS (recomendado)
 
-1. Descarga: `https://registry.npmjs.org/qrcode/-/qrcode-1.5.4.tgz`
-2. Extrae el `.tgz`.
-3. Copia `package/build/qrcode.min.js` a este directorio como `qrcode.min.js`.
+1. Descarga: `https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js`
+2. Copia ese archivo a este directorio como `qrcode.min.js`.
 
 ### Opción 2: usar un mirror CDN del mismo paquete
 
-- `https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js`
-- `https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js`
+- `https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js`
