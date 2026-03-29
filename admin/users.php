@@ -336,6 +336,7 @@ try {
         .inline-form { display: inline-block; margin: 0; }
         .inline-btn { margin-top: 0; padding: 6px 10px; font-size: 13px; }
         .actions-cell { min-width: 180px; }
+        .actions-cell .inline-btn { margin-left: 6px; }
         .pill { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
         .pill.active { background: #e8f4ff; color: #0a56a6; }
         .pill.used { background: #f0ecff; color: #4a2e99; }
@@ -552,6 +553,7 @@ try {
                         <td><?= htmlspecialchars((string)$row['issued_at'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td class="actions-cell">
                             <a href="?invite_status=<?= urlencode($inviteStatusFilter) ?>&invite_id=<?= urlencode((string)$row['id']) ?>">Detalle</a>
+                            <button type="button" class="inline-btn js-generate-table-qr" data-code-id="<?= htmlspecialchars((string)$row['code_id'], ENT_QUOTES, 'UTF-8') ?>">Generar QR</button>
                             <?php if ((string)$row['status'] !== 'REVOKED'): ?>
                                 <form method="post" class="inline-form" onsubmit="return confirm('¿Seguro que deseas revocar este pase?');">
                                     <input type="hidden" name="action" value="revoke_invite">
@@ -566,6 +568,11 @@ try {
                 <?php endforeach; ?>
             </tbody>
         </table>
+
+        <div class="qr-wrap">
+            <button type="button" id="btn-download-table-qr" style="display:none;">Descargar QR seleccionado</button>
+            <div id="table-qr-container" style="margin-top:10px;"></div>
+        </div>
     </section>
 
     <?php if ($selectedInvite !== null): ?>
@@ -633,19 +640,17 @@ try {
             const generateBtn = document.getElementById('btn-generate-qr');
             const downloadBtn = document.getElementById('btn-download-qr');
             const container = document.getElementById('qr-container');
+            const tableQrContainer = document.getElementById('table-qr-container');
+            const tableDownloadBtn = document.getElementById('btn-download-table-qr');
+            const tableQrButtons = document.querySelectorAll('.js-generate-table-qr');
 
-            if (!codeNode || !generateBtn || !downloadBtn || !container) {
-                return;
-            }
-
-            const codeId = codeNode.textContent.trim();
             let latestDataUrl = null;
-            const qrApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=2&data=';
+            let latestCodeId = '';
+            let tableLatestDataUrl = null;
+            let tableLatestCodeId = '';
 
-            function renderQrImage(url) {
-                latestDataUrl = url;
-                container.innerHTML = '';
-
+            function renderQrImage(targetContainer, targetDownloadBtn, url) {
+                targetContainer.innerHTML = '';
                 const image = document.createElement('img');
                 image.src = url;
                 image.alt = 'QR del pase';
@@ -654,73 +659,21 @@ try {
                 image.style.border = '1px solid #ddd';
                 image.style.background = '#fff';
                 image.style.padding = '6px';
-                container.appendChild(image);
-
-                downloadBtn.style.display = 'inline-block';
+                targetContainer.appendChild(image);
+                targetDownloadBtn.style.display = 'inline-block';
             }
 
-            function renderQrImage(url) {
-                latestDataUrl = url;
-                container.innerHTML = '';
-
-                const image = document.createElement('img');
-                image.src = url;
-                image.alt = 'QR del pase';
-                image.width = 320;
-                image.height = 320;
-                image.style.border = '1px solid #ddd';
-                image.style.background = '#fff';
-                image.style.padding = '6px';
-                container.appendChild(image);
-
-                downloadBtn.style.display = 'inline-block';
-            }
-
-            function renderQrImage(url) {
-                latestDataUrl = url;
-                container.innerHTML = '';
-
-                const image = document.createElement('img');
-                image.src = url;
-                image.alt = 'QR del pase';
-                image.width = 320;
-                image.height = 320;
-                image.style.border = '1px solid #ddd';
-                image.style.background = '#fff';
-                image.style.padding = '6px';
-                container.appendChild(image);
-
-                downloadBtn.style.display = 'inline-block';
-            }
-
-            function renderQrImage(url) {
-                latestDataUrl = url;
-                container.innerHTML = '';
-
-                const image = document.createElement('img');
-                image.src = url;
-                image.alt = 'QR del pase';
-                image.width = 320;
-                image.height = 320;
-                image.style.border = '1px solid #ddd';
-                image.style.background = '#fff';
-                image.style.padding = '6px';
-                container.appendChild(image);
-
-                downloadBtn.style.display = 'inline-block';
-            }
-
-            generateBtn.addEventListener('click', function () {
+            function generateQr(codeId, targetContainer, onSuccess) {
                 if (!codeId) {
                     return;
                 }
 
                 if (typeof QRCode === 'undefined') {
-                    container.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor (ver <code>admin/assets/js/README.md</code>).';
+                    targetContainer.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor (ver <code>admin/assets/js/README.md</code>).';
                     return;
                 }
 
-                container.textContent = 'Generando QR...';
+                targetContainer.textContent = 'Generando QR...';
                 if (typeof QRCode.toDataURL === 'function') {
                     QRCode.toDataURL(codeId, {
                         errorCorrectionLevel: 'M',
@@ -728,22 +681,22 @@ try {
                         margin: 2,
                     }, function (error, url) {
                         if (error || !url) {
-                            container.textContent = 'No se pudo generar el QR.';
+                            targetContainer.textContent = 'No se pudo generar el QR.';
                             return;
                         }
-                        renderQrImage(url);
+                        onSuccess(url);
                     });
                     return;
                 }
 
                 if (typeof QRCode === 'function') {
-                    container.innerHTML = '';
+                    targetContainer.innerHTML = '';
                     const holder = document.createElement('div');
                     holder.style.display = 'inline-block';
                     holder.style.border = '1px solid #ddd';
                     holder.style.background = '#fff';
                     holder.style.padding = '6px';
-                    container.appendChild(holder);
+                    targetContainer.appendChild(holder);
 
                     new QRCode(holder, {
                         text: codeId,
@@ -754,38 +707,73 @@ try {
                     window.setTimeout(function () {
                         const image = holder.querySelector('img');
                         if (image && image.src) {
-                            latestDataUrl = image.src;
-                            downloadBtn.style.display = 'inline-block';
+                            onSuccess(image.src);
                             return;
                         }
 
                         const canvas = holder.querySelector('canvas');
                         if (canvas && typeof canvas.toDataURL === 'function') {
-                            latestDataUrl = canvas.toDataURL('image/png');
-                            downloadBtn.style.display = 'inline-block';
+                            onSuccess(canvas.toDataURL('image/png'));
                             return;
                         }
 
-                        container.textContent = 'No se pudo generar el QR con la librería instalada.';
+                        targetContainer.textContent = 'No se pudo generar el QR con la librería instalada.';
                     }, 50);
                     return;
                 }
 
-                container.textContent = 'La librería QR cargada no es compatible.';
-            });
+                targetContainer.textContent = 'La librería QR cargada no es compatible.';
+            }
 
-            downloadBtn.addEventListener('click', function () {
-                if (!latestDataUrl) {
-                    return;
-                }
+            if (codeNode && generateBtn && downloadBtn && container) {
+                generateBtn.addEventListener('click', function () {
+                    const codeId = codeNode.textContent.trim();
+                    generateQr(codeId, container, function (url) {
+                        latestDataUrl = url;
+                        latestCodeId = codeId;
+                        renderQrImage(container, downloadBtn, url);
+                    });
+                });
 
-                const link = document.createElement('a');
-                link.href = latestDataUrl;
-                link.download = 'pase-' + codeId + '.png';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            });
+                downloadBtn.addEventListener('click', function () {
+                    if (!latestDataUrl) {
+                        return;
+                    }
+
+                    const link = document.createElement('a');
+                    link.href = latestDataUrl;
+                    link.download = 'pase-' + latestCodeId + '.png';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+            }
+
+            if (tableQrContainer && tableDownloadBtn && tableQrButtons.length > 0) {
+                tableQrButtons.forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        const codeId = (button.getAttribute('data-code-id') || '').trim();
+                        generateQr(codeId, tableQrContainer, function (url) {
+                            tableLatestDataUrl = url;
+                            tableLatestCodeId = codeId;
+                            renderQrImage(tableQrContainer, tableDownloadBtn, url);
+                        });
+                    });
+                });
+
+                tableDownloadBtn.addEventListener('click', function () {
+                    if (!tableLatestDataUrl) {
+                        return;
+                    }
+
+                    const link = document.createElement('a');
+                    link.href = tableLatestDataUrl;
+                    link.download = 'pase-' + tableLatestCodeId + '.png';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+            }
         })();
     </script>
 </body>
