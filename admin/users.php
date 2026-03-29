@@ -640,6 +640,41 @@ try {
 
             const codeId = codeNode.textContent.trim();
             let latestDataUrl = null;
+            const qrApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=2&data=';
+
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
+
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
 
             function renderQrImage(url) {
                 latestDataUrl = url;
