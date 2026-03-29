@@ -624,6 +624,7 @@ try {
         </section>
     <?php endif; ?>
 
+    <script src="/admin/assets/js/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script>
@@ -658,23 +659,30 @@ try {
                 downloadBtn.style.display = 'inline-block';
             }
 
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
+
             generateBtn.addEventListener('click', function () {
                 if (!codeId) {
                     return;
                 }
 
                 if (typeof QRCode === 'undefined') {
-                    const fallbackUrl = qrApiUrl + encodeURIComponent(codeId);
-                    container.textContent = 'Generando QR con método alterno...';
-
-                    const testImage = new Image();
-                    testImage.onload = function () {
-                        renderQrImage(fallbackUrl);
-                    };
-                    testImage.onerror = function () {
-                        container.innerHTML = 'No se pudo cargar la librería de QR ni el método alterno. Usa este Code ID manualmente: <code>' + codeId + '</code>';
-                    };
-                    testImage.src = fallbackUrl;
+                    container.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor o habilita una CDN.';
                     return;
                 }
 
