@@ -676,13 +676,30 @@ try {
                 downloadBtn.style.display = 'inline-block';
             }
 
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
+
             generateBtn.addEventListener('click', function () {
                 if (!codeId) {
                     return;
                 }
 
                 if (typeof QRCode === 'undefined') {
-                    container.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor o habilita una CDN.';
+                    container.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor (ver <code>admin/assets/js/README.md</code>).';
                     return;
                 }
 
