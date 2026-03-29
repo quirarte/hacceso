@@ -632,7 +632,7 @@ try {
             const downloadBtn = document.getElementById('btn-download-qr');
             const container = document.getElementById('qr-container');
 
-            if (!codeNode || !generateBtn || !downloadBtn || !container || typeof QRCode === 'undefined') {
+            if (!codeNode || !generateBtn || !downloadBtn || !container) {
                 return;
             }
 
@@ -641,6 +641,11 @@ try {
 
             generateBtn.addEventListener('click', function () {
                 if (!codeId) {
+                    return;
+                }
+
+                if (typeof QRCode === 'undefined') {
+                    container.innerHTML = 'No se pudo cargar la librería de QR. Verifica tu conexión a internet e intenta de nuevo.';
                     return;
                 }
 
