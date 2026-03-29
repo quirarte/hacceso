@@ -1,0 +1,8 @@
+SetEnv APP_TIMEZONE "America/Mexico_City"
+SetEnv DB_TIMEZONE_SQL "SET time_zone = '-06:00'"
+
+SetEnv DB_HOST "localhost"
+SetEnv DB_PORT "3306"
+SetEnv DB_NAME "hacceso_hacedo"
+SetEnv DB_USER "hacceso_hacedo_u"
+SetEnv DB_PASS "!Ultra463y."
