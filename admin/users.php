@@ -625,6 +625,7 @@ try {
     <?php endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script>
         (function () {
             const codeNode = document.getElementById('new-pass-code-id');
@@ -638,6 +639,24 @@ try {
 
             const codeId = codeNode.textContent.trim();
             let latestDataUrl = null;
+            const qrApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=2&data=';
+
+            function renderQrImage(url) {
+                latestDataUrl = url;
+                container.innerHTML = '';
+
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = 'QR del pase';
+                image.width = 320;
+                image.height = 320;
+                image.style.border = '1px solid #ddd';
+                image.style.background = '#fff';
+                image.style.padding = '6px';
+                container.appendChild(image);
+
+                downloadBtn.style.display = 'inline-block';
+            }
 
             generateBtn.addEventListener('click', function () {
                 if (!codeId) {
@@ -645,7 +664,17 @@ try {
                 }
 
                 if (typeof QRCode === 'undefined') {
-                    container.innerHTML = 'No se pudo cargar la librería de QR. Verifica tu conexión a internet e intenta de nuevo.';
+                    const fallbackUrl = qrApiUrl + encodeURIComponent(codeId);
+                    container.textContent = 'Generando QR con método alterno...';
+
+                    const testImage = new Image();
+                    testImage.onload = function () {
+                        renderQrImage(fallbackUrl);
+                    };
+                    testImage.onerror = function () {
+                        container.innerHTML = 'No se pudo cargar la librería de QR ni el método alterno. Usa este Code ID manualmente: <code>' + codeId + '</code>';
+                    };
+                    testImage.src = fallbackUrl;
                     return;
                 }
 
@@ -660,21 +689,7 @@ try {
                         container.textContent = 'No se pudo generar el QR.';
                         return;
                     }
-
-                    latestDataUrl = url;
-                    container.innerHTML = '';
-
-                    const image = document.createElement('img');
-                    image.src = url;
-                    image.alt = 'QR del pase';
-                    image.width = 320;
-                    image.height = 320;
-                    image.style.border = '1px solid #ddd';
-                    image.style.background = '#fff';
-                    image.style.padding = '6px';
-                    container.appendChild(image);
-
-                    downloadBtn.style.display = 'inline-block';
+                    renderQrImage(url);
                 });
             });
 
