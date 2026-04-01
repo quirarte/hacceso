@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 
+$pdo = db_pdo($config);
+$currentUser = auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN]);
+$currentAdminLabel = (string)$currentUser['resolved_display_name'];
+
 $error = null;
 $success = null;
 $generatedIssuerKey = null;
@@ -21,7 +25,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = trim((string)($_POST['action'] ?? ''));
 
     try {
-        $pdo = db_pdo($config);
+        auth_require_csrf_token($config);
 
         if ($action === 'create_employee') {
             $uid = trim((string)($_POST['uid'] ?? ''));
@@ -29,7 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $isActive = (int)(($_POST['is_active'] ?? '1') === '1');
 
             if ($uid === '' || $displayName === '') {
-                throw new RuntimeException('UID y nombre son obligatorios para crear usuario.');
+                throw new RuntimeException('UID y nombre son obligatorios para crear el empleado.');
             }
 
             $stmt = $pdo->prepare(
@@ -45,13 +49,140 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 'is_active' => $isActive,
             ]);
 
-            $success = 'Usuario guardado correctamente.';
+            $success = 'Empleado guardado correctamente.';
+        } elseif ($action === 'save_app_user') {
+            $username = trim((string)($_POST['username'] ?? ''));
+            $displayName = normalize_optional_string($_POST['app_display_name'] ?? null);
+            $role = strtoupper(trim((string)($_POST['role'] ?? AUTH_ROLE_EMPLOYEE)));
+            $employeeUid = normalize_optional_string($_POST['app_user_employee_uid'] ?? null);
+            $password = (string)($_POST['password'] ?? '');
+            $isActive = (int)(($_POST['app_user_is_active'] ?? '1') === '1');
+
+            if ($username === '') {
+                throw new RuntimeException('username es obligatorio.');
+            }
+
+            if (!auth_is_valid_role($role)) {
+                throw new RuntimeException('role no es valido.');
+            }
+
+            $existingUser = auth_fetch_user_record_by_username($pdo, $username);
+
+            if ($role === AUTH_ROLE_EMPLOYEE) {
+                if ($employeeUid === null) {
+                    throw new RuntimeException('Los usuarios EMPLOYEE deben apuntar a un employee_uid activo.');
+                }
+
+                $employeeStmt = $pdo->prepare(
+                    'SELECT uid, display_name
+                     FROM employees
+                     WHERE uid = :uid AND is_active = 1
+                     LIMIT 1'
+                );
+                $employeeStmt->execute(['uid' => $employeeUid]);
+                $employeeRow = $employeeStmt->fetch();
+
+                if (!is_array($employeeRow)) {
+                    throw new RuntimeException('El employee_uid para el usuario web no existe o esta inactivo.');
+                }
+
+                $userForEmployee = auth_fetch_user_record_by_employee_uid($pdo, $employeeUid);
+                if (is_array($userForEmployee) && (!is_array($existingUser) || (string)$userForEmployee['id'] !== (string)$existingUser['id'])) {
+                    throw new RuntimeException('Ese employee_uid ya esta ligado a otro usuario web.');
+                }
+
+                if ($displayName === null) {
+                    $displayName = (string)$employeeRow['display_name'];
+                }
+            } else {
+                $employeeUid = null;
+                if ($displayName === null) {
+                    $displayName = $username;
+                }
+            }
+
+            if ($existingUser === null && trim($password) === '') {
+                throw new RuntimeException('La password es obligatoria al crear un usuario web nuevo.');
+            }
+
+            $nowSql = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+
+            if ($existingUser === null) {
+                $insertStmt = $pdo->prepare(
+                    'INSERT INTO app_users (
+                        id,
+                        username,
+                        display_name,
+                        password_hash,
+                        role,
+                        employee_uid,
+                        is_active,
+                        last_login_at,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        :id,
+                        :username,
+                        :display_name,
+                        :password_hash,
+                        :role,
+                        :employee_uid,
+                        :is_active,
+                        NULL,
+                        :created_at,
+                        :updated_at
+                    )'
+                );
+                $insertStmt->execute([
+                    'id' => uuid_v4(),
+                    'username' => $username,
+                    'display_name' => $displayName,
+                    'password_hash' => password_hash($password, PASSWORD_BCRYPT),
+                    'role' => $role,
+                    'employee_uid' => $employeeUid,
+                    'is_active' => $isActive,
+                    'created_at' => $nowSql,
+                    'updated_at' => $nowSql,
+                ]);
+
+                $success = 'Usuario web creado correctamente.';
+            } else {
+                $params = [
+                    'id' => (string)$existingUser['id'],
+                    'display_name' => $displayName,
+                    'role' => $role,
+                    'employee_uid' => $employeeUid,
+                    'is_active' => $isActive,
+                    'updated_at' => $nowSql,
+                ];
+
+                $passwordSql = '';
+                if (trim($password) !== '') {
+                    $passwordSql = ', password_hash = :password_hash';
+                    $params['password_hash'] = password_hash($password, PASSWORD_BCRYPT);
+                }
+
+                $updateStmt = $pdo->prepare(
+                    'UPDATE app_users
+                     SET display_name = :display_name,
+                         role = :role,
+                         employee_uid = :employee_uid,
+                         is_active = :is_active,
+                         updated_at = :updated_at' . $passwordSql . '
+                     WHERE id = :id'
+                );
+                $updateStmt->execute($params);
+
+                $success = trim($password) !== ''
+                    ? 'Usuario web actualizado y password renovada.'
+                    : 'Usuario web actualizado.';
+            }
         } elseif ($action === 'create_issuer_key') {
             $employeeUid = trim((string)($_POST['employee_uid'] ?? ''));
             $isEnabled = (int)(($_POST['is_enabled'] ?? '1') === '1');
 
             if ($employeeUid === '') {
-                throw new RuntimeException('employee_uid es obligatorio para generar llave.');
+                throw new RuntimeException('employee_uid es obligatorio para generar la llave.');
             }
 
             $employeeStmt = $pdo->prepare('SELECT uid FROM employees WHERE uid = :uid LIMIT 1');
@@ -77,7 +208,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             ]);
 
             $generatedIssuerKey = $plainIssuerKey;
-            $success = 'Llave de emisor creada. Copia la llave en claro ahora, no se volverá a mostrar.';
+            $success = 'Llave de emisor creada. Copiala ahora; no se volvera a mostrar.';
         } elseif ($action === 'create_invite') {
             $visitorName = trim((string)($_POST['visitor_name'] ?? ''));
             $validFromRaw = trim((string)($_POST['valid_from'] ?? ''));
@@ -99,7 +230,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $validFrom = new DateTimeImmutable($validFromRaw);
                 $validTo = new DateTimeImmutable($validToRaw);
             } catch (Throwable $exception) {
-                throw new RuntimeException('valid_from y valid_to deben tener formato de fecha válido.');
+                throw new RuntimeException('valid_from y valid_to deben tener formato de fecha valido.');
             }
 
             if ($validTo <= $validFrom) {
@@ -111,7 +242,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $employeeRow = $employeeStmt->fetch();
 
             if (!is_array($employeeRow)) {
-                throw new RuntimeException('El emisor no existe o está inactivo.');
+                throw new RuntimeException('El emisor no existe o esta inactivo.');
             }
 
             $now = new DateTimeImmutable('now');
@@ -209,29 +340,37 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 ]);
                 $success = 'Pase revocado correctamente.';
             } else {
-                $success = 'El pase ya estaba revocado (operación idempotente).';
+                $success = 'El pase ya estaba revocado.';
             }
 
             $pdo->commit();
         } else {
-            throw new RuntimeException('Acción no soportada.');
+            throw new RuntimeException('Accion no soportada.');
         }
     } catch (Throwable $exception) {
-        if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+        if ($pdo instanceof PDO && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
         $error = $exception->getMessage();
     }
 }
 
+$activeEmployees = [];
 $employees = [];
+$appUsers = [];
 $issuerKeys = [];
 $invites = [];
 $selectedInvite = null;
 $selectedInviteEvents = [];
 
 try {
-    $pdo = db_pdo($config);
+    $activeEmployeesStmt = $pdo->query(
+        'SELECT uid, display_name
+         FROM employees
+         WHERE is_active = 1
+         ORDER BY display_name ASC'
+    );
+    $activeEmployees = $activeEmployeesStmt->fetchAll();
 
     $employeesStmt = $pdo->query(
         'SELECT uid, display_name, is_active, created_at, updated_at
@@ -239,6 +378,8 @@ try {
          ORDER BY created_at DESC'
     );
     $employees = $employeesStmt->fetchAll();
+
+    $appUsers = auth_fetch_app_users($pdo);
 
     $issuerKeysStmt = $pdo->query(
         'SELECT issuer_key_id, employee_uid, is_enabled, created_at, updated_at
@@ -321,21 +462,124 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Hacceso Admin - Usuarios y pases</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 24px; background: #f7f7f8; color: #222; }
-        .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-        h1, h2, h3 { margin-top: 0; }
-        label { display: block; margin-top: 8px; font-weight: 600; }
-        input, select { width: 100%; max-width: 440px; padding: 8px; margin-top: 4px; }
-        button { margin-top: 12px; padding: 10px 14px; cursor: pointer; }
-        table { border-collapse: collapse; width: 100%; font-size: 14px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+        :root {
+            color-scheme: light;
+            --bg: #f7f7f8;
+            --card: #ffffff;
+            --line: #d1d5db;
+            --text: #222222;
+            --muted: #666666;
+            --primary: #1f6feb;
+            --ok-bg: #e9fbe9;
+            --ok-border: #64b464;
+            --err-bg: #fdecec;
+            --err-border: #d87c7c;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .topbar h1 {
+            margin: 0;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        h2, h3 { margin-top: 0; }
+
+        label {
+            display: block;
+            margin-top: 8px;
+            font-weight: 600;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            max-width: 440px;
+            padding: 8px;
+            margin-top: 4px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font: inherit;
+        }
+
+        button {
+            width: auto;
+            margin-top: 12px;
+            cursor: pointer;
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            font-weight: 700;
+        }
+
+        button.secondary {
+            background: #fff;
+            color: var(--text);
+            border-color: var(--line);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--line);
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
         th { background: #f0f0f2; }
-        .ok { background: #e9fbe9; border: 1px solid #64b464; padding: 10px; border-radius: 6px; }
-        .err { background: #fdecec; border: 1px solid #d87c7c; padding: 10px; border-radius: 6px; }
+
+        .ok,
+        .err {
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+        }
+
+        .ok { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+        .err { background: var(--err-bg); border: 1px solid var(--err-border); }
+
+        .muted { color: var(--muted); font-size: 13px; }
         .qr-wrap { margin-top: 10px; }
         .inline-form { display: inline-block; margin: 0; }
         .inline-btn { margin-top: 0; padding: 6px 10px; font-size: 13px; }
-        .actions-cell { min-width: 180px; }
+        .actions-cell { min-width: 220px; }
         .actions-cell .inline-btn { margin-left: 6px; }
         .pill { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
         .pill.active { background: #e8f4ff; color: #0a56a6; }
@@ -343,15 +587,26 @@ try {
         .pill.revoked { background: #feecec; color: #9a1e1e; }
         .pill.expired { background: #fff3e6; color: #9b5c00; }
         code { background: #f2f2f2; padding: 2px 4px; border-radius: 4px; }
-        .muted { color: #666; font-size: 13px; }
     </style>
 </head>
 <body>
-    <h1>Panel Admin: Usuarios, llaves de emisor y pases</h1>
+    <div class="topbar">
+        <div>
+            <h1>Panel Admin: usuarios, roles y pases</h1>
+            <div class="muted">Administra empleados, usuarios web, llaves de emisor y pases temporales.</div>
+        </div>
+        <div class="topbar-actions">
+            <div class="muted">Sesion: <strong><?= htmlspecialchars($currentAdminLabel, ENT_QUOTES, 'UTF-8') ?></strong> (ADMIN)</div>
+            <form method="post" action="/logout.php" class="inline-form">
+                <?= auth_csrf_input($config) ?>
+                <button type="submit" class="secondary">Cerrar sesion</button>
+            </form>
+        </div>
+    </div>
 
     <?php if ($success !== null): ?>
         <div class="ok">
-            <strong>Éxito:</strong> <?= htmlspecialchars($success, ENT_QUOTES, 'UTF-8') ?>
+            <strong>Exito:</strong> <?= htmlspecialchars($success, ENT_QUOTES, 'UTF-8') ?>
             <?php if ($generatedIssuerKey !== null): ?>
                 <div style="margin-top:8px;">
                     Llave en claro (copiar y guardar):
@@ -365,7 +620,7 @@ try {
                 </div>
                 <div class="qr-wrap">
                     <button type="button" id="btn-generate-qr">Generar QR</button>
-                    <button type="button" id="btn-download-qr" style="display:none;">Descargar PNG</button>
+                    <button type="button" id="btn-download-qr" class="secondary" style="display:none;">Descargar PNG</button>
                     <div id="qr-container" style="margin-top:10px;"></div>
                 </div>
             <?php endif; ?>
@@ -377,8 +632,81 @@ try {
     <?php endif; ?>
 
     <section class="card">
-        <h2>Crear / actualizar usuario (employees)</h2>
+        <h2>Crear o actualizar usuario web</h2>
+        <p class="muted">Usa el mismo username para actualizar un usuario existente. Si dejas la password vacia durante una actualizacion, se conserva la actual.</p>
         <form method="post">
+            <?= auth_csrf_input($config) ?>
+            <input type="hidden" name="action" value="save_app_user">
+
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" required placeholder="emp_admin_01">
+
+            <label for="app_display_name">Nombre visible</label>
+            <input id="app_display_name" name="app_display_name" type="text" placeholder="Admin Hacedores">
+
+            <label for="role">Rol</label>
+            <select id="role" name="role">
+                <option value="EMPLOYEE">EMPLOYEE</option>
+                <option value="ADMIN">ADMIN</option>
+            </select>
+
+            <label for="app_user_employee_uid">Employee UID (solo para EMPLOYEE)</label>
+            <select id="app_user_employee_uid" name="app_user_employee_uid">
+                <option value="">Sin employee_uid</option>
+                <?php foreach ($activeEmployees as $employee): ?>
+                    <option value="<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>">
+                        <?= htmlspecialchars((string)$employee['display_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>)
+                    </option>
+                <?php endforeach; ?>
+            </select>
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" placeholder="Nueva password o password inicial">
+
+            <label for="app_user_is_active">Estado del usuario web</label>
+            <select id="app_user_is_active" name="app_user_is_active">
+                <option value="1">Activo</option>
+                <option value="0">Inactivo</option>
+            </select>
+
+            <button type="submit">Guardar usuario web</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Usuarios web registrados</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Rol</th>
+                    <th>Employee UID</th>
+                    <th>Nombre visible</th>
+                    <th>Activo</th>
+                    <th>Ultimo login</th>
+                    <th>Actualizado</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($appUsers as $row): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)$row['username'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars((string)$row['role'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars((string)($row['employee_uid'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars((string)($row['employee_display_name'] ?? $row['display_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= (int)$row['is_active'] === 1 ? 'Si' : 'No' ?></td>
+                        <td><?= htmlspecialchars((string)($row['last_login_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars((string)$row['updated_at'], ENT_QUOTES, 'UTF-8') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>Crear o actualizar empleado</h2>
+        <form method="post">
+            <?= auth_csrf_input($config) ?>
             <input type="hidden" name="action" value="create_employee">
 
             <label for="uid">UID</label>
@@ -393,17 +721,25 @@ try {
                 <option value="0">Inactivo</option>
             </select>
 
-            <button type="submit">Guardar usuario</button>
+            <button type="submit">Guardar empleado</button>
         </form>
     </section>
 
     <section class="card">
         <h2>Generar llave de emisor (X-Issuer-Key)</h2>
         <form method="post">
+            <?= auth_csrf_input($config) ?>
             <input type="hidden" name="action" value="create_issuer_key">
 
             <label for="employee_uid">Employee UID</label>
-            <input id="employee_uid" name="employee_uid" type="text" required placeholder="emp_admin_01">
+            <select id="employee_uid" name="employee_uid" required>
+                <option value="">Selecciona un empleado</option>
+                <?php foreach ($activeEmployees as $employee): ?>
+                    <option value="<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>">
+                        <?= htmlspecialchars((string)$employee['display_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>)
+                    </option>
+                <?php endforeach; ?>
+            </select>
 
             <label for="is_enabled">Estado de llave</label>
             <select id="is_enabled" name="is_enabled">
@@ -418,35 +754,43 @@ try {
     <section class="card">
         <h2>Generar pase de acceso</h2>
         <form method="post">
+            <?= auth_csrf_input($config) ?>
             <input type="hidden" name="action" value="create_invite">
 
             <label for="visitor_name">Nombre del visitante</label>
-            <input id="visitor_name" name="visitor_name" type="text" required placeholder="Juan Pérez">
+            <input id="visitor_name" name="visitor_name" type="text" required placeholder="Juan Perez">
 
-            <label for="visitor_phone">Teléfono (opcional)</label>
+            <label for="visitor_phone">Telefono (opcional)</label>
             <input id="visitor_phone" name="visitor_phone" type="text" placeholder="+52 55 1234 5678">
 
             <label for="visitor_email">Email (opcional)</label>
             <input id="visitor_email" name="visitor_email" type="email" placeholder="visitante@email.com">
 
-            <label for="companions_expected">Acompañantes esperados</label>
+            <label for="companions_expected">Acompanantes esperados</label>
             <input id="companions_expected" name="companions_expected" type="number" min="0" value="0" required>
 
-            <label for="valid_from">Válido desde</label>
+            <label for="valid_from">Valido desde</label>
             <input id="valid_from" name="valid_from" type="datetime-local" required>
 
-            <label for="valid_to">Válido hasta</label>
+            <label for="valid_to">Valido hasta</label>
             <input id="valid_to" name="valid_to" type="datetime-local" required>
 
             <label for="issued_by_employee_uid">Emitido por (employee UID activo)</label>
-            <input id="issued_by_employee_uid" name="issued_by_employee_uid" type="text" required placeholder="emp_admin_01">
+            <select id="issued_by_employee_uid" name="issued_by_employee_uid" required>
+                <option value="">Selecciona un empleado activo</option>
+                <?php foreach ($activeEmployees as $employee): ?>
+                    <option value="<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>">
+                        <?= htmlspecialchars((string)$employee['display_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string)$employee['uid'], ENT_QUOTES, 'UTF-8') ?>)
+                    </option>
+                <?php endforeach; ?>
+            </select>
 
             <button type="submit">Crear pase</button>
         </form>
     </section>
 
     <section class="card">
-        <h2>Usuarios registrados</h2>
+        <h2>Empleados registrados</h2>
         <table>
             <thead>
                 <tr>
@@ -462,7 +806,7 @@ try {
                     <tr>
                         <td><?= htmlspecialchars((string)$row['uid'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars((string)$row['display_name'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= (int)$row['is_active'] === 1 ? 'Sí' : 'No' ?></td>
+                        <td><?= (int)$row['is_active'] === 1 ? 'Si' : 'No' ?></td>
                         <td><?= htmlspecialchars((string)$row['created_at'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars((string)$row['updated_at'], ENT_QUOTES, 'UTF-8') ?></td>
                     </tr>
@@ -472,7 +816,7 @@ try {
     </section>
 
     <section class="card">
-        <h2>Llaves de emisor (últimas 50)</h2>
+        <h2>Llaves de emisor (ultimas 50)</h2>
         <table>
             <thead>
                 <tr>
@@ -488,7 +832,7 @@ try {
                     <tr>
                         <td><?= htmlspecialchars((string)$row['issuer_key_id'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars((string)$row['employee_uid'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= (int)$row['is_enabled'] === 1 ? 'Sí' : 'No' ?></td>
+                        <td><?= (int)$row['is_enabled'] === 1 ? 'Si' : 'No' ?></td>
                         <td><?= htmlspecialchars((string)$row['created_at'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars((string)$row['updated_at'], ENT_QUOTES, 'UTF-8') ?></td>
                     </tr>
@@ -498,7 +842,7 @@ try {
     </section>
 
     <section class="card">
-        <h2>Pases recientes (máximo 100)</h2>
+        <h2>Pases recientes (maximo 100)</h2>
         <form method="get" style="margin-bottom: 10px;">
             <label for="invite_status" style="display:inline-block; margin-right:8px;">Filtrar estado:</label>
             <select id="invite_status" name="invite_status" style="width:auto; min-width:180px; display:inline-block;">
@@ -520,9 +864,9 @@ try {
                     <th>Invite ID</th>
                     <th>Code ID (QR)</th>
                     <th>Visitante</th>
-                    <th>Acompañantes</th>
-                    <th>Válido desde</th>
-                    <th>Válido hasta</th>
+                    <th>Acompanantes</th>
+                    <th>Valido desde</th>
+                    <th>Valido hasta</th>
                     <th>Estado</th>
                     <th>Emitido por</th>
                     <th>Emitido en</th>
@@ -555,7 +899,8 @@ try {
                             <a href="?invite_status=<?= urlencode($inviteStatusFilter) ?>&invite_id=<?= urlencode((string)$row['id']) ?>">Detalle</a>
                             <button type="button" class="inline-btn js-generate-table-qr" data-code-id="<?= htmlspecialchars((string)$row['code_id'], ENT_QUOTES, 'UTF-8') ?>">Generar QR</button>
                             <?php if ((string)$row['status'] !== 'REVOKED'): ?>
-                                <form method="post" class="inline-form" onsubmit="return confirm('¿Seguro que deseas revocar este pase?');">
+                                <form method="post" class="inline-form" onsubmit="return confirm('Seguro que deseas revocar este pase?');">
+                                    <?= auth_csrf_input($config) ?>
                                     <input type="hidden" name="action" value="revoke_invite">
                                     <input type="hidden" name="invite_id" value="<?= htmlspecialchars((string)$row['id'], ENT_QUOTES, 'UTF-8') ?>">
                                     <button type="submit" class="inline-btn">Revocar</button>
@@ -570,7 +915,7 @@ try {
         </table>
 
         <div class="qr-wrap">
-            <button type="button" id="btn-download-table-qr" style="display:none;">Descargar QR seleccionado</button>
+            <button type="button" id="btn-download-table-qr" class="secondary" style="display:none;">Descargar QR seleccionado</button>
             <div id="table-qr-container" style="margin-top:10px;"></div>
         </div>
     </section>
@@ -583,12 +928,12 @@ try {
                 <tbody>
                     <tr><th>Code ID</th><td><code><?= htmlspecialchars((string)$selectedInvite['code_id'], ENT_QUOTES, 'UTF-8') ?></code></td></tr>
                     <tr><th>Visitante</th><td><?= htmlspecialchars((string)$selectedInvite['visitor_name'], ENT_QUOTES, 'UTF-8') ?></td></tr>
-                    <tr><th>Teléfono</th><td><?= htmlspecialchars((string)($selectedInvite['visitor_phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td></tr>
+                    <tr><th>Telefono</th><td><?= htmlspecialchars((string)($selectedInvite['visitor_phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><th>Email</th><td><?= htmlspecialchars((string)($selectedInvite['visitor_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td></tr>
-                    <tr><th>Acompañantes</th><td><?= htmlspecialchars((string)$selectedInvite['companions_expected'], ENT_QUOTES, 'UTF-8') ?></td></tr>
+                    <tr><th>Acompanantes</th><td><?= htmlspecialchars((string)$selectedInvite['companions_expected'], ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><th>Estado</th><td><?= htmlspecialchars((string)$selectedInvite['status'], ENT_QUOTES, 'UTF-8') ?></td></tr>
-                    <tr><th>Válido desde</th><td><?= htmlspecialchars((string)$selectedInvite['valid_from'], ENT_QUOTES, 'UTF-8') ?></td></tr>
-                    <tr><th>Válido hasta</th><td><?= htmlspecialchars((string)$selectedInvite['valid_to'], ENT_QUOTES, 'UTF-8') ?></td></tr>
+                    <tr><th>Valido desde</th><td><?= htmlspecialchars((string)$selectedInvite['valid_from'], ENT_QUOTES, 'UTF-8') ?></td></tr>
+                    <tr><th>Valido hasta</th><td><?= htmlspecialchars((string)$selectedInvite['valid_to'], ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><th>Emitido por</th><td><?= htmlspecialchars((string)$selectedInvite['issued_by_employee_uid'], ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><th>Emitido en</th><td><?= htmlspecialchars((string)$selectedInvite['issued_at'], ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><th>Usado en</th><td><?= htmlspecialchars((string)($selectedInvite['used_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td></tr>
@@ -601,7 +946,7 @@ try {
         <section class="card">
             <h3>Historial de escaneos (scan_events)</h3>
             <?php if ($selectedInviteEvents === []): ?>
-                <p class="muted">Sin eventos registrados para este code_id o aún no existe la tabla scan_events.</p>
+                <p class="muted">Sin eventos registrados para este code_id o la tabla scan_events aun no existe.</p>
             <?php else: ?>
                 <table>
                     <thead>
@@ -632,10 +977,8 @@ try {
     <?php endif; ?>
 
     <script src="/admin/assets/js/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
-        (function () {
+        (() => {
             const codeNode = document.getElementById('new-pass-code-id');
             const generateBtn = document.getElementById('btn-generate-qr');
             const downloadBtn = document.getElementById('btn-download-qr');
@@ -644,134 +987,79 @@ try {
             const tableDownloadBtn = document.getElementById('btn-download-table-qr');
             const tableQrButtons = document.querySelectorAll('.js-generate-table-qr');
 
-            let latestDataUrl = null;
             let latestCodeId = '';
-            let tableLatestDataUrl = null;
+            let latestQrWrap = null;
             let tableLatestCodeId = '';
+            let tableLatestQrWrap = null;
 
-            function renderQrImage(targetContainer, targetDownloadBtn, url) {
+            function renderQr(targetContainer, codeId) {
+                if (!targetContainer || !codeId || typeof QRCode === 'undefined') {
+                    return null;
+                }
+
                 targetContainer.innerHTML = '';
-                const image = document.createElement('img');
-                image.src = url;
-                image.alt = 'QR del pase';
-                image.width = 320;
-                image.height = 320;
-                image.style.border = '1px solid #ddd';
-                image.style.background = '#fff';
-                image.style.padding = '6px';
-                targetContainer.appendChild(image);
-                targetDownloadBtn.style.display = 'inline-block';
-            }
+                const qrWrap = document.createElement('div');
+                targetContainer.appendChild(qrWrap);
 
-            function generateQr(codeId, targetContainer, onSuccess) {
-                if (!codeId) {
-                    return;
-                }
-
-                if (typeof QRCode === 'undefined') {
-                    targetContainer.innerHTML = 'No se pudo cargar la librería local de QR. Sube <code>/admin/assets/js/qrcode.min.js</code> al servidor (ver <code>admin/assets/js/README.md</code>).';
-                    return;
-                }
-
-                targetContainer.textContent = 'Generando QR...';
-                if (typeof QRCode.toDataURL === 'function') {
-                    QRCode.toDataURL(codeId, {
-                        errorCorrectionLevel: 'M',
-                        width: 320,
-                        margin: 2,
-                    }, function (error, url) {
-                        if (error || !url) {
-                            targetContainer.textContent = 'No se pudo generar el QR.';
-                            return;
-                        }
-                        onSuccess(url);
-                    });
-                    return;
-                }
-
-                if (typeof QRCode === 'function') {
-                    targetContainer.innerHTML = '';
-                    const holder = document.createElement('div');
-                    holder.style.display = 'inline-block';
-                    holder.style.border = '1px solid #ddd';
-                    holder.style.background = '#fff';
-                    holder.style.padding = '6px';
-                    targetContainer.appendChild(holder);
-
-                    new QRCode(holder, {
-                        text: codeId,
-                        width: 320,
-                        height: 320,
-                    });
-
-                    window.setTimeout(function () {
-                        const image = holder.querySelector('img');
-                        if (image && image.src) {
-                            onSuccess(image.src);
-                            return;
-                        }
-
-                        const canvas = holder.querySelector('canvas');
-                        if (canvas && typeof canvas.toDataURL === 'function') {
-                            onSuccess(canvas.toDataURL('image/png'));
-                            return;
-                        }
-
-                        targetContainer.textContent = 'No se pudo generar el QR con la librería instalada.';
-                    }, 50);
-                    return;
-                }
-
-                targetContainer.textContent = 'La librería QR cargada no es compatible.';
-            }
-
-            if (codeNode && generateBtn && downloadBtn && container) {
-                generateBtn.addEventListener('click', function () {
-                    const codeId = codeNode.textContent.trim();
-                    generateQr(codeId, container, function (url) {
-                        latestDataUrl = url;
-                        latestCodeId = codeId;
-                        renderQrImage(container, downloadBtn, url);
-                    });
+                new QRCode(qrWrap, {
+                    text: codeId,
+                    width: 320,
+                    height: 320,
                 });
 
-                downloadBtn.addEventListener('click', function () {
-                    if (!latestDataUrl) {
-                        return;
+                return qrWrap;
+            }
+
+            function downloadFromWrap(qrWrap, codeId) {
+                if (!qrWrap || !codeId) {
+                    return;
+                }
+
+                const canvas = qrWrap.querySelector('canvas');
+                const img = qrWrap.querySelector('img');
+                let url = '';
+
+                if (canvas) {
+                    url = canvas.toDataURL('image/png');
+                } else if (img) {
+                    url = img.src;
+                }
+
+                if (!url) {
+                    return;
+                }
+
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `pase-${codeId}.png`;
+                link.click();
+            }
+
+            if (generateBtn && downloadBtn && container && codeNode && typeof QRCode !== 'undefined') {
+                generateBtn.addEventListener('click', () => {
+                    latestCodeId = codeNode.textContent.trim();
+                    latestQrWrap = renderQr(container, latestCodeId);
+                    downloadBtn.style.display = latestQrWrap ? 'inline-block' : 'none';
+                });
+
+                downloadBtn.addEventListener('click', () => {
+                    downloadFromWrap(latestQrWrap, latestCodeId);
+                });
+            }
+
+            tableQrButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    tableLatestCodeId = button.getAttribute('data-code-id') || '';
+                    tableLatestQrWrap = renderQr(tableQrContainer, tableLatestCodeId);
+                    if (tableDownloadBtn) {
+                        tableDownloadBtn.style.display = tableLatestQrWrap ? 'inline-block' : 'none';
                     }
-
-                    const link = document.createElement('a');
-                    link.href = latestDataUrl;
-                    link.download = 'pase-' + latestCodeId + '.png';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
                 });
-            }
+            });
 
-            if (tableQrContainer && tableDownloadBtn && tableQrButtons.length > 0) {
-                tableQrButtons.forEach(function (button) {
-                    button.addEventListener('click', function () {
-                        const codeId = (button.getAttribute('data-code-id') || '').trim();
-                        generateQr(codeId, tableQrContainer, function (url) {
-                            tableLatestDataUrl = url;
-                            tableLatestCodeId = codeId;
-                            renderQrImage(tableQrContainer, tableDownloadBtn, url);
-                        });
-                    });
-                });
-
-                tableDownloadBtn.addEventListener('click', function () {
-                    if (!tableLatestDataUrl) {
-                        return;
-                    }
-
-                    const link = document.createElement('a');
-                    link.href = tableLatestDataUrl;
-                    link.download = 'pase-' + tableLatestCodeId + '.png';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+            if (tableDownloadBtn) {
+                tableDownloadBtn.addEventListener('click', () => {
+                    downloadFromWrap(tableLatestQrWrap, tableLatestCodeId);
                 });
             }
         })();

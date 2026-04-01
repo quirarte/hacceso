@@ -85,3 +85,5 @@ function random_token(int $byteLength = 24): string
 {
     return rtrim(strtr(base64_encode(random_bytes($byteLength)), '+/', '-_'), '=');
 }
+
+require_once __DIR__ . '/auth.php';
