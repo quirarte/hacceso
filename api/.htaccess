@@ -5,14 +5,14 @@ Options -Indexes
 RewriteEngine On
 </IfModule>
 
-# Permitir acceso al archivo de prueba
-<Files "qr_test.php">
+# Permitir acceso a endpoints públicos de API
+<FilesMatch "^(qr|qr_test)\.php$">
   Require all granted
-</Files>
+</FilesMatch>
 
 # Asegurar que no se bloquee JSON POST básico
 <IfModule mod_headers.c>
   Header always set Access-Control-Allow-Origin "*"
   Header always set Access-Control-Allow-Methods "POST, OPTIONS"
-  Header always set Access-Control-Allow-Headers "Content-Type, User-Agent"
+  Header always set Access-Control-Allow-Headers "Content-Type, User-Agent, X-API-Key"
 </IfModule>
