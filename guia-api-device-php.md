@@ -193,3 +193,45 @@ Notas:
 - El endpoint valida `X-Issuer-Key` contra hashes `bcrypt` en `issuer_keys.api_key_hash`.
 - Genera `code_id` aleatorio seguro (base64url) para el QR.
 - Inserta el pase con `status = ACTIVE`, `issued_at`, `created_at` y `updated_at` desde servidor.
+
+## 9) Diagnóstico cuando el pase sigue en `ACTIVE`
+
+Si al escanear un QR el pase no cambia de `ACTIVE` a `USED`, revisa este checklist:
+
+1. **Confirma endpoint correcto**
+   - `api/qr_test.php` **solo registra recepción** y responde `QR recibido correctamente`; no consulta ni actualiza `invites`.
+   - Para cambiar estado, usa `POST /api/qr` o `POST /api/device/validate`.
+
+2. **Confirma payload esperado**
+   - En `api/qr`: `device_id`/`device` y `code_id`/`qr`.
+   - En `api/device/validate`: `device_id` y `code_id`.
+
+3. **Confirma autorización de dispositivo**
+   - El `device_id` debe existir en `devices` y estar habilitado (`is_enabled = 1`).
+   - Si el dispositivo tiene `api_key_hash`, debes enviar `X-API-Key` válido.
+
+4. **Verifica respuesta de la API**
+   - La primera lectura válida debe regresar `result = OK_FIRST`.
+   - Si vuelve a pasar dentro de 5 minutos, puede regresar `OK_REDISPLAY`.
+   - Si sigue marcando `INEXISTENT`, `EXPIRED`, `REVOKED` o `USED`, el estado no se moverá a `USED` en ese intento.
+
+5. **Valida en base de datos**
+
+```sql
+-- Estado actual del pase
+SELECT code_id, status, used_at, redisplay_until, valid_from, valid_to
+FROM invites
+WHERE code_id = 'TU_CODE_ID';
+
+-- Últimos eventos de escaneo del QR
+SELECT code_id, device_id, result, scanned_at, error_detail
+FROM scan_events
+WHERE code_id = 'TU_CODE_ID'
+ORDER BY scanned_at DESC
+LIMIT 20;
+```
+
+6. **Revisión rápida de sintomatología común**
+   - Si en logs aparece `qr=` vacío, el lector no está enviando el valor del QR.
+   - Si recibes `401`, hay problema de `device_id` o `X-API-Key`.
+   - Si recibes `200` con `result=OK_FIRST`, la actualización a `USED` sí ocurrió.
