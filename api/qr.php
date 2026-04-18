@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, User-Agent, X-API-Key');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-    header('Access-Control-Allow-Methods: POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
     json_response(200, ['ok' => true]);
 }
 
@@ -26,26 +28,28 @@ if ($body === []) {
     $body = $_POST;
 }
 
-$deviceId = trim((string)($body['device_id'] ?? $body['device'] ?? ''));
+$deviceId = trim((string)($body['device_id'] ?? $body['device'] ?? 'esp32-devkitc-v4'));
 $codeId = trim((string)($body['code_id'] ?? $body['qr'] ?? ''));
 $apiKey = request_header('X-API-Key') ?? trim((string)($body['api_key'] ?? ''));
+$userAgent = request_header('User-Agent') ?? '';
+$ipAddress = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
 
-if ($deviceId === '' || $codeId === '') {
-    json_response(422, [
+if ($codeId === '' || strlen($codeId) < 3 || strlen($codeId) > 300) {
+    json_response(400, [
         'ok' => false,
         'error' => [
-            'code' => 'VALIDATION_ERROR',
-            'message' => 'device_id/device y code_id/qr son obligatorios.',
+            'code' => 'INVALID_QR',
+            'message' => 'QR inválido.',
         ],
     ]);
 }
 
-if ($apiKey === '') {
-    json_response(401, [
+if ($deviceId === '') {
+    json_response(422, [
         'ok' => false,
         'error' => [
-            'code' => 'UNAUTHORIZED',
-            'message' => 'X-API-Key es requerido.',
+            'code' => 'VALIDATION_ERROR',
+            'message' => 'device_id/device es obligatorio.',
         ],
     ]);
 }
@@ -62,11 +66,30 @@ try {
     $deviceStmt->execute(['device_id' => $deviceId]);
     $device = $deviceStmt->fetch();
 
-    $apiAuthorized = is_array($device)
-        && (int)$device['is_enabled'] === 1
-        && password_verify($apiKey, (string)$device['api_key_hash']);
+    if (!is_array($device) || (int)$device['is_enabled'] !== 1) {
+        json_response(401, [
+            'ok' => false,
+            'error' => [
+                'code' => 'UNAUTHORIZED',
+                'message' => 'Dispositivo no autorizado.',
+            ],
+        ]);
+    }
 
-    if (!$apiAuthorized) {
+    $apiKeyHash = trim((string)($device['api_key_hash'] ?? ''));
+    $requiresApiKey = $apiKeyHash !== '';
+
+    if ($requiresApiKey && $apiKey === '') {
+        json_response(401, [
+            'ok' => false,
+            'error' => [
+                'code' => 'UNAUTHORIZED',
+                'message' => 'X-API-Key es requerido para este dispositivo.',
+            ],
+        ]);
+    }
+
+    if ($requiresApiKey && !password_verify($apiKey, $apiKeyHash)) {
         json_response(401, [
             'ok' => false,
             'error' => [
@@ -144,14 +167,17 @@ try {
         'result' => $result,
         'visitor_name_snapshot' => $visitorName,
         'latency_ms' => $latencyMs,
-        'error_detail' => null,
+        'error_detail' => sprintf('ip=%s ua=%s', $ipAddress, $userAgent),
     ]);
 
     $pdo->commit();
 
     $response = [
         'ok' => true,
+        'message' => 'QR procesado',
         'result' => $result,
+        'qr_length' => strlen($codeId),
+        'device' => $deviceId,
         'scanned_at' => $now->format(DateTimeInterface::ATOM),
     ];
 
