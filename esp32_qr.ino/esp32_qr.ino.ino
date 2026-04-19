@@ -5,8 +5,8 @@
 #include <LiquidCrystal_PCF8574.h>
 
 // ======== PINES DISPLAY I2C (EDITABLES) ========
-static const int DISPLAY_SDA_PIN = 21;
-static const int DISPLAY_SCL_PIN = 22;
+static const int DISPLAY_SDA_PIN = 32;
+static const int DISPLAY_SCL_PIN = 33;
 
 // ======== WIFI ========
 const char* ssid = "jardin";
