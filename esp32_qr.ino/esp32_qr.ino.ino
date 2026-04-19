@@ -9,6 +9,7 @@ const char* password = "Luna2014";
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
 const char* apiKey = "REEMPLAZAR_CON_API_KEY";
+const char* deviceId = "REEMPLAZAR_DEVICE_ID_REGISTRADO";
 
 // ======== UART SCANNER ========
 HardwareSerial QRSerial(2);
@@ -76,7 +77,15 @@ bool sendQR(const String& qrText) {
   safe.replace("\\", "\\\\");
   safe.replace("\"", "\\\"");
 
-  String body = "{\"qr\":\"" + safe + "\",\"device\":\"esp32-devkitc-v4\"}";
+  String safeDevice = String(deviceId);
+  safeDevice.replace("\\", "\\\\");
+  safeDevice.replace("\"", "\\\"");
+
+  String safeApiKey = String(apiKey);
+  safeApiKey.replace("\\", "\\\\");
+  safeApiKey.replace("\"", "\\\"");
+
+  String body = "{\"qr\":\"" + safe + "\",\"device_id\":\"" + safeDevice + "\",\"device\":\"" + safeDevice + "\",\"api_key\":\"" + safeApiKey + "\"}";
   int code = http.POST(body);
 
   bool ok = false;
@@ -125,6 +134,9 @@ void setup() {
   delay(700);
 
   Serial.println("\n=== ESP32 QR PRODUCCION ===");
+  Serial.print("Endpoint: "); Serial.println(endpoint);
+  Serial.print("Device ID: "); Serial.println(deviceId);
+  Serial.print("API key configurada: "); Serial.println(strlen(apiKey) > 0 ? "si" : "no");
   QRSerial.begin(115200, SERIAL_8N1, QR_RX_PIN, QR_TX_PIN); // si falla prueba 9600 o 57600
   connectWiFi();
 }
