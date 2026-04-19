@@ -8,6 +8,7 @@ const char* password = "Luna2014";
 
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
+const char* apiKey = "REEMPLAZAR_CON_API_KEY";
 
 // ======== UART SCANNER ========
 HardwareSerial QRSerial(2);
@@ -67,6 +68,7 @@ bool sendQR(const String& qrText) {
   http.begin(endpoint);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("User-Agent", "ESP32-QR-Client/1.0");
+  http.addHeader("X-API-Key", apiKey);
   http.setConnectTimeout(8000);
   http.setTimeout(8000);
 
