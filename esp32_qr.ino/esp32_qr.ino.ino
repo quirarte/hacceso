@@ -22,6 +22,8 @@ static const int QR_TX_PIN = 14; // ESP32 TX -> RX scanner
 static const uint8_t LCD_I2C_ADDRESS = 0x27;
 static const uint8_t LCD_COLS = 16;
 static const uint8_t LCD_ROWS = 2;
+static const int I2C_SDA_PIN = 21;
+static const int I2C_SCL_PIN = 22;
 LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLS, LCD_ROWS);
 
 const unsigned long resultDisplayMs = 60000; // mantener resultado 60s
@@ -227,7 +229,7 @@ void processQR(const String& qrText) {
 void setup() {
   Serial.begin(115200);
   delay(700);
-  Wire.begin();
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   lcd.init();
   lcd.backlight();
   lcdPrint2Lines("Hacceso", "Iniciando...");
