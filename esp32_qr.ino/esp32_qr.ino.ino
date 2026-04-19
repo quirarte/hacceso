@@ -4,6 +4,10 @@
 #include <Wire.h>
 #include <LiquidCrystal_PCF8574.h>
 
+// ======== PINES DISPLAY I2C (EDITABLES) ========
+static const int DISPLAY_SDA_PIN = 21;
+static const int DISPLAY_SCL_PIN = 22;
+
 // ======== WIFI ========
 const char* ssid = "jardin";
 const char* password = "Luna2014";
@@ -22,8 +26,6 @@ static const int QR_TX_PIN = 14; // ESP32 TX -> RX scanner
 static const uint8_t LCD_I2C_ADDRESS = 0x27;
 static const uint8_t LCD_COLS = 16;
 static const uint8_t LCD_ROWS = 2;
-static const int I2C_SDA_PIN = 21;
-static const int I2C_SCL_PIN = 22;
 LiquidCrystal_PCF8574 lcd(LCD_I2C_ADDRESS);
 
 const unsigned long resultDisplayMs = 60000; // mantener resultado 60s
@@ -229,7 +231,7 @@ void processQR(const String& qrText) {
 void setup() {
   Serial.begin(115200);
   delay(700);
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.begin(DISPLAY_SDA_PIN, DISPLAY_SCL_PIN);
   lcd.begin(LCD_COLS, LCD_ROWS);
   lcd.setBacklight(255);
   lcdPrint2Lines("Hacceso", "Iniciando...");
