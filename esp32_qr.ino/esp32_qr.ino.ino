@@ -14,8 +14,8 @@ const char* password = "Luna2014";
 
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
-const char* apiKey = "REEMPLAZAR_CON_API_KEY";
-const char* deviceId = "REEMPLAZAR_DEVICE_ID_REGISTRADO";
+const char* apiKey = "4YtYUPP1bh_4ZUAJtT1GB9TTOGkPwzvVsvnZPAa0LrI";
+const char* deviceId = "recepcion-01";
 
 // ======== UART SCANNER ========
 HardwareSerial QRSerial(2);
