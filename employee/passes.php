@@ -13,6 +13,8 @@ $error = null;
 $success = null;
 $generatedPassCodeId = null;
 
+auth_session_start($config);
+
 $selectedInviteId = trim((string)($_GET['invite_id'] ?? ''));
 $inviteStatusFilter = strtoupper(trim((string)($_GET['invite_status'] ?? 'ALL')));
 $validInviteFilters = ['ALL', 'ACTIVE', 'USED', 'REVOKED', 'EXPIRED'];
@@ -127,7 +129,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         $generatedPassCodeId = $codeId;
         $selectedInviteId = $inviteId;
-        $success = 'Pase de acceso creado correctamente.';
+        $_SESSION['employee_pass_flash_success'] = 'Pase de acceso creado correctamente.';
+        $_SESSION['employee_pass_flash_code_id'] = $codeId;
+
+        $redirectQuery = [
+            'invite_status' => $inviteStatusFilter,
+            'invite_id' => $selectedInviteId,
+        ];
+        auth_redirect('/employee/passes.php?' . http_build_query($redirectQuery) . '#detalle');
     } catch (Throwable $exception) {
         if ($pdo instanceof PDO && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -149,6 +158,16 @@ $activeInvitesCount = 0;
 $issuedTodayCount = 0;
 $expiringSoonCount = 0;
 $expiredPendingCount = 0;
+
+if (isset($_SESSION['employee_pass_flash_success']) && is_string($_SESSION['employee_pass_flash_success'])) {
+    $success = $_SESSION['employee_pass_flash_success'];
+    unset($_SESSION['employee_pass_flash_success']);
+}
+
+if (isset($_SESSION['employee_pass_flash_code_id']) && is_string($_SESSION['employee_pass_flash_code_id'])) {
+    $generatedPassCodeId = $_SESSION['employee_pass_flash_code_id'];
+    unset($_SESSION['employee_pass_flash_code_id']);
+}
 
 try {
     $inviteConditions = ['issued_by_employee_uid = :current_employee_uid'];
