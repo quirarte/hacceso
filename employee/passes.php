@@ -4,6 +4,25 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 
+function invite_effective_status(string $storedStatus, DateTimeImmutable $validTo, DateTimeImmutable $now): string
+{
+    if ($storedStatus === 'ACTIVE' && $validTo < $now) {
+        return 'EXPIRED';
+    }
+
+    return $storedStatus;
+}
+
+function invite_status_badge_class(string $effectiveStatus): string
+{
+    return match ($effectiveStatus) {
+        'USED' => 'info',
+        'REVOKED' => 'danger',
+        'EXPIRED' => 'warning',
+        default => 'success',
+    };
+}
+
 $pdo = db_pdo($config);
 $currentUser = auth_require_roles($pdo, $config, [AUTH_ROLE_EMPLOYEE]);
 $currentEmployeeUid = (string)$currentUser['employee_uid'];
@@ -158,6 +177,8 @@ $activeInvitesCount = 0;
 $issuedTodayCount = 0;
 $expiringSoonCount = 0;
 $expiredPendingCount = 0;
+$requestNow = new DateTimeImmutable('now');
+$requestNowSql = $requestNow->format('Y-m-d H:i:s');
 
 if (isset($_SESSION['employee_pass_flash_success']) && is_string($_SESSION['employee_pass_flash_success'])) {
     $success = $_SESSION['employee_pass_flash_success'];
@@ -175,14 +196,14 @@ try {
 
     if ($inviteStatusFilter === 'ACTIVE') {
         $inviteConditions[] = 'status = "ACTIVE" AND valid_to >= :now_filter';
-        $inviteParams['now_filter'] = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $inviteParams['now_filter'] = $requestNowSql;
     } elseif ($inviteStatusFilter === 'USED') {
         $inviteConditions[] = 'status = "USED"';
     } elseif ($inviteStatusFilter === 'REVOKED') {
         $inviteConditions[] = 'status = "REVOKED"';
     } elseif ($inviteStatusFilter === 'EXPIRED') {
         $inviteConditions[] = 'status = "ACTIVE" AND valid_to < :now_filter';
-        $inviteParams['now_filter'] = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $inviteParams['now_filter'] = $requestNowSql;
     }
 
     $invitesSql =
@@ -196,17 +217,17 @@ try {
     $invitesStmt->execute($inviteParams);
     $invites = $invitesStmt->fetchAll();
 
-    $nowStats = new DateTimeImmutable('now');
-    $todayStart = $nowStats->setTime(0, 0, 0);
+    $todayStart = $requestNow->setTime(0, 0, 0);
     $tomorrowStart = $todayStart->modify('+1 day');
-    $soonLimit = $nowStats->modify('+24 hours');
+    $soonLimit = $requestNow->modify('+24 hours');
 
     foreach ($invites as $row) {
         $rowStatus = (string)$row['status'];
         $rowValidTo = new DateTimeImmutable((string)$row['valid_to']);
         $rowIssuedAt = new DateTimeImmutable((string)$row['issued_at']);
+        $rowEffectiveStatus = invite_effective_status($rowStatus, $rowValidTo, $requestNow);
 
-        if ($rowStatus === 'ACTIVE' && $rowValidTo >= $nowStats) {
+        if ($rowEffectiveStatus === 'ACTIVE') {
             $activeInvitesCount++;
         }
 
@@ -214,11 +235,11 @@ try {
             $issuedTodayCount++;
         }
 
-        if ($rowStatus === 'ACTIVE' && $rowValidTo >= $nowStats && $rowValidTo <= $soonLimit) {
+        if ($rowEffectiveStatus === 'ACTIVE' && $rowValidTo <= $soonLimit) {
             $expiringSoonCount++;
         }
 
-        if ($rowStatus === 'ACTIVE' && $rowValidTo < $nowStats) {
+        if ($rowEffectiveStatus === 'EXPIRED') {
             $expiredPendingCount++;
         }
     }
@@ -1133,19 +1154,15 @@ try {
                     if ($detailInvite !== null) {
                         $detailStatus = (string)$detailInvite['status'];
                         $detailValidTo = new DateTimeImmutable((string)$detailInvite['valid_to']);
-                        $detailNow = new DateTimeImmutable('now');
-                        $detailIsExpiredActive = $detailStatus === 'ACTIVE' && $detailValidTo < $detailNow;
-                        $detailStatusLabel = $detailIsExpiredActive ? 'Expirado' : $detailStatus;
-                        $detailStatusClass = $detailStatus === 'USED'
-                            ? 'info'
-                            : ($detailStatus === 'REVOKED' ? 'danger' : ($detailIsExpiredActive ? 'warning' : 'success'));
+                        $detailStatusLabel = invite_effective_status($detailStatus, $detailValidTo, $requestNow);
+                        $detailStatusClass = invite_status_badge_class($detailStatusLabel);
                         $detailVisitorName = (string)$detailInvite['visitor_name'];
                         $detailCompanions = (string)$detailInvite['companions_expected'] . ' acompanantes';
                         $detailWindow =
                             (new DateTimeImmutable((string)$detailInvite['valid_from']))->format('d/m/Y H:i') .
                             ' - ' .
                             $detailValidTo->format('d/m/Y H:i');
-                        $detailWindowNote = $detailIsExpiredActive ? 'Este pase ya vencio.' : 'Ventana de acceso vigente.';
+                        $detailWindowNote = $detailStatusLabel === 'EXPIRED' ? 'Este pase ya vencio.' : 'Ventana de acceso vigente.';
                         $detailPhone = (string)($detailInvite['visitor_phone'] ?? '') !== ''
                             ? (string)$detailInvite['visitor_phone']
                             : 'No disponible';
@@ -1243,18 +1260,14 @@ try {
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($invites as $row): ?>
+                    <?php foreach ($invites as $row): ?>
                     <?php
                         $status = (string)$row['status'];
                         $validTo = new DateTimeImmutable((string)$row['valid_to']);
                         $validFrom = new DateTimeImmutable((string)$row['valid_from']);
                         $issuedAt = new DateTimeImmutable((string)$row['issued_at']);
-                        $computedNow = new DateTimeImmutable('now');
-                        $isExpiredActive = $status === 'ACTIVE' && $validTo < $computedNow;
-                        $statusClass = $status === 'USED'
-                            ? 'info'
-                            : ($status === 'REVOKED' ? 'danger' : ($isExpiredActive ? 'warning' : 'success'));
-                        $statusLabel = $isExpiredActive ? 'Expirado' : $status;
+                        $statusLabel = invite_effective_status($status, $validTo, $requestNow);
+                        $statusClass = invite_status_badge_class($statusLabel);
                     ?>
                     <tr>
                         <td>
@@ -1263,7 +1276,7 @@ try {
                         </td>
                         <td>
                             <div class="row-title"><?= htmlspecialchars($validFrom->format('d/m/Y H:i'), ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($validTo->format('d/m/Y H:i'), ENT_QUOTES, 'UTF-8') ?></div>
-                            <div class="row-subtle"><?= $isExpiredActive ? 'Ya vencido' : 'Ventana configurada' ?></div>
+                            <div class="row-subtle"><?= $statusLabel === 'EXPIRED' ? 'Ya vencido' : 'Ventana configurada' ?></div>
                         </td>
                         <td><span class="badge <?= htmlspecialchars($statusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
                         <td>
