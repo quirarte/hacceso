@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hacceso Mockup - Panel de pases</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #eef3f0;
+            --bg-accent: #dce8df;
+            --surface: rgba(255, 255, 255, 0.82);
+            --surface-strong: #ffffff;
+            --surface-dark: #17352d;
+            --surface-dark-2: #214539;
+            --text: #163028;
+            --muted: #60756d;
+            --line: rgba(22, 48, 40, 0.12);
+            --primary: #1d8f6b;
+            --primary-strong: #136b50;
+            --primary-soft: #dbf4ea;
+            --warning-soft: #fff1cf;
+            --warning-text: #92610f;
+            --danger-soft: #fde5e3;
+            --danger-text: #a03832;
+            --info-soft: #e6f2ff;
+            --info-text: #1d5f97;
+            --shadow: 0 24px 60px rgba(18, 39, 33, 0.10);
+            --radius-xl: 28px;
+            --radius-lg: 22px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+            --sidebar-width: 290px;
+            font-family: Bahnschrift, "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(65, 155, 120, 0.22), transparent 30%),
+                radial-gradient(circle at bottom right, rgba(247, 199, 96, 0.18), transparent 24%),
+                linear-gradient(180deg, #f4f8f5 0%, var(--bg) 100%);
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: relative;
+            overflow: hidden;
+            padding: 28px 22px;
+            color: #eef8f3;
+            background:
+                radial-gradient(circle at top right, rgba(108, 213, 170, 0.22), transparent 34%),
+                linear-gradient(180deg, var(--surface-dark) 0%, #112721 100%);
+        }
+
+        .sidebar::after {
+            content: "";
+            position: absolute;
+            right: -56px;
+            bottom: -56px;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .brand {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+
+        .brand-mark {
+            width: 46px;
+            height: 46px;
+            display: grid;
+            place-items: center;
+            border-radius: 15px;
+            font-size: 22px;
+            font-weight: 800;
+            color: #103126;
+            background: linear-gradient(135deg, #9ce8c8 0%, #f2db8d 100%);
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: 0.02em;
+        }
+
+        .brand p {
+            margin: 4px 0 0;
+            color: rgba(238, 248, 243, 0.72);
+            font-size: 13px;
+        }
+
+        .sidebar-card,
+        .nav-group {
+            position: relative;
+            z-index: 1;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border-radius: 22px;
+        }
+
+        .sidebar-card {
+            padding: 18px;
+            margin-bottom: 18px;
+        }
+
+        .sidebar-card small,
+        .helper small {
+            display: block;
+            color: rgba(238, 248, 243, 0.72);
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+
+        .sidebar-card strong {
+            display: block;
+            font-size: 20px;
+            margin-bottom: 6px;
+        }
+
+        .sidebar-card span {
+            color: rgba(238, 248, 243, 0.76);
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .nav-group {
+            padding: 12px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 14px;
+            border-radius: 16px;
+            color: #f4fbf8;
+            text-decoration: none;
+            font-weight: 700;
+            transition: transform 160ms ease, background 160ms ease;
+        }
+
+        .nav-link + .nav-link {
+            margin-top: 6px;
+        }
+
+        .nav-link:hover {
+            transform: translateX(2px);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .nav-link.active {
+            color: #103126;
+            background: linear-gradient(135deg, #a6efcf 0%, #f4e1a8 100%);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+        }
+
+        .nav-pill {
+            min-width: 28px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            text-align: center;
+            color: rgba(244, 251, 248, 0.84);
+            background: rgba(255, 255, 255, 0.10);
+        }
+
+        .nav-link.active .nav-pill {
+            color: #103126;
+            background: rgba(16, 49, 38, 0.12);
+        }
+
+        .helper {
+            position: relative;
+            z-index: 1;
+            margin-top: 18px;
+            padding: 18px;
+            border-radius: 22px;
+            background: rgba(11, 23, 19, 0.26);
+        }
+
+        .helper p {
+            margin: 0 0 14px;
+            color: rgba(238, 248, 243, 0.76);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .helper button {
+            width: 100%;
+            border: 0;
+            border-radius: 14px;
+            padding: 12px 16px;
+            font: inherit;
+            font-weight: 800;
+            color: #123227;
+            background: #f1e1a9;
+        }
+
+        .content {
+            padding: 28px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+
+        .title-block h2 {
+            margin: 0;
+            font-size: 34px;
+            line-height: 1.05;
+        }
+
+        .title-block p {
+            margin: 8px 0 0;
+            color: var(--muted);
+            max-width: 700px;
+            line-height: 1.5;
+        }
+
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .ghost-chip,
+        .top-actions button,
+        .filter,
+        input,
+        select {
+            font: inherit;
+        }
+
+        .ghost-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.56);
+            color: var(--text);
+        }
+
+        .top-actions button {
+            border: 0;
+            border-radius: 16px;
+            padding: 13px 18px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .top-actions .primary {
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+            box-shadow: 0 14px 28px rgba(29, 143, 107, 0.24);
+        }
+
+        .top-actions .secondary {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.65);
+            border: 1px solid var(--line);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card,
+        .panel,
+        .detail-card,
+        .table-card {
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            background: var(--surface);
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow);
+        }
+
+        .stat-card {
+            padding: 18px 18px 16px;
+            border-radius: var(--radius-lg);
+        }
+
+        .stat-card small {
+            display: block;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            font-size: 11px;
+            margin-bottom: 12px;
+        }
+
+        .stat-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .stat-value {
+            font-size: 34px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .badge.success {
+            color: var(--primary-strong);
+            background: var(--primary-soft);
+        }
+
+        .badge.warning {
+            color: var(--warning-text);
+            background: var(--warning-soft);
+        }
+
+        .badge.info {
+            color: var(--info-text);
+            background: var(--info-soft);
+        }
+
+        .badge.danger {
+            color: var(--danger-text);
+            background: var(--danger-soft);
+        }
+
+        .stat-note {
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+            gap: 22px;
+            align-items: start;
+        }
+
+        .panel,
+        .detail-card,
+        .table-card {
+            border-radius: var(--radius-xl);
+        }
+
+        .panel {
+            padding: 24px;
+        }
+
+        .section-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: var(--primary-soft);
+            color: var(--primary-strong);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+        }
+
+        .panel h3,
+        .detail-card h3,
+        .table-card h3 {
+            margin: 0;
+            font-size: 28px;
+            line-height: 1.1;
+        }
+
+        .section-copy {
+            margin: 10px 0 22px;
+            color: var(--muted);
+            max-width: 760px;
+            line-height: 1.55;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .field.full {
+            grid-column: 1 / -1;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+        }
+
+        .field input,
+        .field select {
+            width: 100%;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.92);
+            color: var(--text);
+            border-radius: 16px;
+            padding: 14px 15px;
+            outline: none;
+        }
+
+        .field-hint {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .cta-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-top: 22px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
+
+        .cta-row p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .cta-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .cta-actions button {
+            border: 0;
+            border-radius: 15px;
+            padding: 13px 18px;
+            font: inherit;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .cta-actions .primary {
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+        }
+
+        .cta-actions .secondary {
+            color: var(--text);
+            background: #fff;
+            border: 1px solid var(--line);
+        }
+
+        .detail-card {
+            padding: 22px;
+        }
+
+        .detail-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .detail-top p {
+            margin: 8px 0 0;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .detail-status {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .qr-preview {
+            display: grid;
+            place-items: center;
+            min-height: 238px;
+            margin-bottom: 18px;
+            border-radius: 24px;
+            background:
+                linear-gradient(180deg, rgba(219, 244, 234, 0.72) 0%, rgba(255, 255, 255, 0.92) 100%);
+            border: 1px dashed rgba(29, 143, 107, 0.25);
+        }
+
+        .qr-box {
+            width: 174px;
+            height: 174px;
+            padding: 14px;
+            border-radius: 24px;
+            background:
+                linear-gradient(135deg, #163028 0 10%, transparent 10% 20%, #163028 20% 30%, transparent 30% 40%, #163028 40% 50%, transparent 50% 60%, #163028 60% 70%, transparent 70% 80%, #163028 80% 90%, transparent 90% 100%),
+                linear-gradient(45deg, #163028 0 10%, transparent 10% 20%, #163028 20% 30%, transparent 30% 40%, #163028 40% 50%, transparent 50% 60%, #163028 60% 70%, transparent 70% 80%, #163028 80% 90%, transparent 90% 100%),
+                #fff;
+            background-size: 26px 26px;
+            box-shadow: 0 16px 30px rgba(22, 48, 40, 0.12);
+        }
+
+        .detail-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .detail-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .detail-item:last-child {
+            padding-bottom: 0;
+            border-bottom: 0;
+        }
+
+        .detail-item small {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+        }
+
+        .detail-item strong {
+            font-size: 15px;
+        }
+
+        .table-card {
+            margin-top: 22px;
+            padding: 22px;
+        }
+
+        .table-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .table-head p {
+            margin: 8px 0 0;
+            color: var(--muted);
+        }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .filter,
+        .search {
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.86);
+            border-radius: 15px;
+            padding: 12px 14px;
+        }
+
+        .search {
+            min-width: 240px;
+            flex: 1 1 240px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 14px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.48);
+        }
+
+        .row-title {
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .row-subtle {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .row-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .row-actions button {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--text);
+            border-radius: 12px;
+            padding: 9px 12px;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 1220px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .app-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                padding-bottom: 20px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .topbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .stats-grid,
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .table-head,
+            .cta-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .title-block h2 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">H</div>
+            <div>
+                <h1>Hacceso</h1>
+                <p>Panel operativo para empleados</p>
+            </div>
+        </div>
+
+        <div class="sidebar-card">
+            <small>Accion prioritaria</small>
+            <strong>Generar pase rapido</strong>
+            <span>El acceso principal del panel vive al frente para emitir un pase sin navegar entre pantallas.</span>
+        </div>
+
+        <nav class="nav-group" aria-label="Navegacion principal">
+            <a class="nav-link" href="#inicio">
+                <span>Inicio</span>
+                <span class="nav-pill">04</span>
+            </a>
+            <a class="nav-link active" href="#generar">
+                <span>Generar pase</span>
+                <span class="nav-pill">+</span>
+            </a>
+            <a class="nav-link" href="#emitidos">
+                <span>Pases emitidos</span>
+                <span class="nav-pill">18</span>
+            </a>
+            <a class="nav-link" href="#detalle">
+                <span>Detalle y QR</span>
+                <span class="nav-pill">1</span>
+            </a>
+        </nav>
+
+        <div class="helper">
+            <small>Soporte visual</small>
+            <p>La idea es que el usuario se mueva entre bloques claros en vez de recorrer una página larga con todo mezclado.</p>
+            <button type="button">Cerrar sesion</button>
+        </div>
+    </aside>
+
+    <main class="content">
+        <header class="topbar" id="inicio">
+            <div class="title-block">
+                <h2>Genera, consulta y comparte pases con menos friccion</h2>
+                <p>Mockup estático del nuevo flujo de empleado. La navegación separa la emisión, la consulta y el detalle para que la operación sea más rápida y más clara.</p>
+            </div>
+            <div class="top-actions">
+                <div class="ghost-chip">Sesion activa: <strong>Juan Perez</strong></div>
+                <button type="button" class="secondary">Ver actividad</button>
+                <button type="button" class="primary">Nuevo pase</button>
+            </div>
+        </header>
+
+        <section class="stats-grid" aria-label="Resumen">
+            <article class="stat-card">
+                <small>Pases vigentes</small>
+                <div class="stat-row">
+                    <div class="stat-value">12</div>
+                    <span class="badge success">+3 hoy</span>
+                </div>
+                <div class="stat-note">Accesos disponibles en este momento.</div>
+            </article>
+
+            <article class="stat-card">
+                <small>Emitidos hoy</small>
+                <div class="stat-row">
+                    <div class="stat-value">18</div>
+                    <span class="badge info">Promedio normal</span>
+                </div>
+                <div class="stat-note">Volumen diario para seguimiento rapido.</div>
+            </article>
+
+            <article class="stat-card">
+                <small>Por vencer</small>
+                <div class="stat-row">
+                    <div class="stat-value">4</div>
+                    <span class="badge warning">En 2 horas</span>
+                </div>
+                <div class="stat-note">Pases que requieren atencion proxima.</div>
+            </article>
+
+            <article class="stat-card">
+                <small>Incidencias</small>
+                <div class="stat-row">
+                    <div class="stat-value">1</div>
+                    <span class="badge danger">Revisar</span>
+                </div>
+                <div class="stat-note">Un pase fue intentado fuera de horario.</div>
+            </article>
+        </section>
+
+        <section class="content-grid" id="generar">
+            <article class="panel">
+                <div class="section-kicker">Seccion principal</div>
+                <h3>Generar pase</h3>
+                <p class="section-copy">Esta vista propone un formulario protagonista, con menos ruido visual y una vigencia editable que se autocompleta a 24 horas desde el momento actual.</p>
+
+                <div class="form-grid">
+                    <div class="field full">
+                        <label for="visitor_name">Nombre del visitante</label>
+                        <input id="visitor_name" type="text" value="Carlos Mendoza">
+                    </div>
+
+                    <div class="field">
+                        <label for="visitor_phone">Telefono</label>
+                        <input id="visitor_phone" type="text" value="+52 55 4321 9876">
+                    </div>
+
+                    <div class="field">
+                        <label for="companions_expected">Acompanantes</label>
+                        <input id="companions_expected" type="text" value="1">
+                    </div>
+
+                    <div class="field">
+                        <label for="valid_from">Valido desde</label>
+                        <input id="valid_from" type="datetime-local">
+                    </div>
+
+                    <div class="field">
+                        <label for="valid_to">Valido hasta</label>
+                        <input id="valid_to" type="datetime-local">
+                        <div class="field-hint">Este campo se propone autocompletado a 24 horas despues de la fecha y hora actual, pero sigue siendo editable.</div>
+                    </div>
+                </div>
+
+                <div class="cta-row">
+                    <p>Al confirmar, el sistema muestra el QR, permite descargarlo y deja el pase visible en la lista reciente para consulta inmediata.</p>
+                    <div class="cta-actions">
+                        <button type="button" class="secondary">Guardar borrador</button>
+                        <button type="button" class="primary">Generar pase y mostrar QR</button>
+                    </div>
+                </div>
+            </article>
+
+            <aside class="detail-card" id="detalle">
+                <div class="detail-top">
+                    <div>
+                        <div class="section-kicker">Vista complementaria</div>
+                        <h3>Detalle y QR</h3>
+                        <p>El QR no invade el formulario. Vive en un panel lateral para que el usuario lo consulte o descargue sin perder contexto.</p>
+                    </div>
+                    <div class="detail-status">
+                        <span class="badge success">Activo</span>
+                        <span class="badge info">QR listo</span>
+                    </div>
+                </div>
+
+                <div class="qr-preview" aria-hidden="true">
+                    <div class="qr-box"></div>
+                </div>
+
+                <div class="detail-list">
+                    <div class="detail-item">
+                        <div>
+                            <small>Visitante</small>
+                            <strong>Carlos Mendoza</strong>
+                        </div>
+                        <div class="row-subtle">1 acompanante</div>
+                    </div>
+                    <div class="detail-item">
+                        <div>
+                            <small>Ventana de acceso</small>
+                            <strong>Ahora - +24 horas</strong>
+                        </div>
+                        <div class="row-subtle">Editable</div>
+                    </div>
+                    <div class="detail-item">
+                        <div>
+                            <small>Acciones</small>
+                            <strong>Descargar, reenviar o ampliar QR</strong>
+                        </div>
+                        <div class="row-subtle">Sin salir del panel</div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="table-card" id="emitidos">
+            <div class="table-head">
+                <div>
+                    <div class="section-kicker">Consulta rapida</div>
+                    <h3>Pases emitidos</h3>
+                    <p>La consulta deja de ser una tabla aislada y se vuelve una sección propia, con filtros visibles y acciones rápidas por fila.</p>
+                </div>
+                <div class="ghost-chip">Ultima sincronizacion: 09:42</div>
+            </div>
+
+            <div class="filter-row">
+                <input class="search" type="text" value="Buscar visitante, code ID o telefono" readonly>
+                <div class="filter">Estado: Todos</div>
+                <div class="filter">Fecha: Hoy</div>
+                <div class="filter">Orden: Mas recientes</div>
+            </div>
+
+            <table>
+                <thead>
+                <tr>
+                    <th>Visitante</th>
+                    <th>Vigencia</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>
+                        <div class="row-title">Carlos Mendoza</div>
+                        <div class="row-subtle">2 acompanantes</div>
+                    </td>
+                    <td>
+                        <div class="row-title">08:00 - 10:00</div>
+                        <div class="row-subtle">22/05/2026</div>
+                    </td>
+                    <td><span class="badge success">Activo</span></td>
+                    <td>
+                        <div class="row-actions">
+                            <button type="button">Ver detalle</button>
+                            <button type="button">Ver QR</button>
+                            <button type="button">Duplicar</button>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="row-title">Lucia Navarro</div>
+                        <div class="row-subtle">0 acompanantes</div>
+                    </td>
+                    <td>
+                        <div class="row-title">11:00 - 13:00</div>
+                        <div class="row-subtle">22/05/2026</div>
+                    </td>
+                    <td><span class="badge warning">Por vencer</span></td>
+                    <td>
+                        <div class="row-actions">
+                            <button type="button">Ver detalle</button>
+                            <button type="button">Ver QR</button>
+                            <button type="button">Extender</button>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="row-title">Marco Ibarra</div>
+                        <div class="row-subtle">1 acompanante</div>
+                    </td>
+                    <td>
+                        <div class="row-title">Ayer 15:00 - 17:00</div>
+                        <div class="row-subtle">21/05/2026</div>
+                    </td>
+                    <td><span class="badge info">Usado</span></td>
+                    <td>
+                        <div class="row-actions">
+                            <button type="button">Ver detalle</button>
+                            <button type="button">Duplicar</button>
+                        </div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+</div>
+<script>
+(() => {
+    const validFromInput = document.getElementById('valid_from');
+    const validToInput = document.getElementById('valid_to');
+
+    if (!validFromInput || !validToInput) {
+        return;
+    }
+
+    function toDateTimeLocalValue(date) {
+        const pad = (value) => String(value).padStart(2, '0');
+
+        return [
+            date.getFullYear(),
+            pad(date.getMonth() + 1),
+            pad(date.getDate()),
+        ].join('-') + 'T' + [
+            pad(date.getHours()),
+            pad(date.getMinutes()),
+        ].join(':');
+    }
+
+    const now = new Date();
+    const plus24Hours = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+
+    validFromInput.value = toDateTimeLocalValue(now);
+    validToInput.value = toDateTimeLocalValue(plus24Hours);
+})();
+</script>
+</body>
+</html>
