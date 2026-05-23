@@ -1105,7 +1105,6 @@ try {
                         <div class="field">
                             <label for="valid_to">Valido hasta</label>
                             <input id="valid_to" name="valid_to" type="datetime-local" required value="<?= htmlspecialchars($formValidTo, ENT_QUOTES, 'UTF-8') ?>">
-                            <div class="field-hint">Este campo se propone autocompletado a 24 horas despues de la fecha y hora actual, pero sigue siendo editable.</div>
                         </div>
                     </div>
 
@@ -1122,7 +1121,7 @@ try {
             <aside class="detail-card" id="detalle">
                 <?php
                     $detailInvite = $selectedInvite;
-                    $detailStatusLabel = 'Sin seleccionar';
+                    $detailStatusLabel = 'Listo';
                     $detailStatusClass = 'info';
                     $detailVisitorName = 'Selecciona un pase para ver el detalle';
                     $detailCompanions = '';
@@ -1155,16 +1154,14 @@ try {
                 ?>
                 <div class="detail-top">
                     <div>
-                        <div class="section-kicker">Vista complementaria</div>
                         <h3>Detalle y QR</h3>
-                        <p>El QR vive en un panel lateral para que lo consultes o descargues sin perder el contexto del formulario y del listado.</p>
                     </div>
-                    <div class="detail-status">
-                        <span class="badge <?= htmlspecialchars($detailStatusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($detailStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
-                        <?php if ($generatedPassCodeId !== null || $selectedInvite !== null): ?>
+                    <?php if ($generatedPassCodeId !== null || $selectedInvite !== null): ?>
+                        <div class="detail-status">
+                            <span class="badge <?= htmlspecialchars($detailStatusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($detailStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
                             <span class="badge info">QR listo</span>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="qr-preview" id="detail-qr-container" data-code-id="<?= htmlspecialchars((string)($generatedPassCodeId ?? ($selectedInvite['code_id'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
@@ -1216,9 +1213,7 @@ try {
         <section class="table-card" id="emitidos">
             <div class="table-head">
                 <div>
-                    <div class="section-kicker">Consulta rapida</div>
                     <h3>Pases emitidos</h3>
-                    <p>Consulta tus pases recientes con filtros visibles y acciones directas sobre cada registro.</p>
                 </div>
                 <div class="ghost-chip">Total cargados: <strong><?= htmlspecialchars((string)count($invites), ENT_QUOTES, 'UTF-8') ?></strong></div>
             </div>
@@ -1226,7 +1221,6 @@ try {
             <form method="get">
                 <div class="filter-row">
                     <label class="sr-only" for="invite_status">Filtrar estado</label>
-                    <input class="search" type="text" value="Buscar por visitante o revisar visualmente la lista reciente" readonly>
                     <select id="invite_status" name="invite_status">
                         <option value="ALL" <?= $inviteStatusFilter === 'ALL' ? 'selected' : '' ?>>Todos</option>
                         <option value="ACTIVE" <?= $inviteStatusFilter === 'ACTIVE' ? 'selected' : '' ?>>Activos</option>
