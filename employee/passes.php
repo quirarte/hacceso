@@ -548,6 +548,10 @@ try {
             margin-bottom: 24px;
         }
 
+        .title-block h2:only-child {
+            margin-bottom: 0;
+        }
+
         .stat-card,
         .panel,
         .detail-card,
@@ -976,14 +980,7 @@ try {
             <div class="brand-mark">H</div>
             <div>
                 <h1>Hacceso</h1>
-                <p>Panel operativo para empleados</p>
             </div>
-        </div>
-
-        <div class="sidebar-card">
-            <small>Accion prioritaria</small>
-            <strong>Generar pase rapido</strong>
-            <span>Emite un pase y consulta su QR sin perder de vista los accesos recientes que ya generaste.</span>
         </div>
 
         <nav class="nav-group" aria-label="Navegacion principal">
@@ -1006,8 +1003,6 @@ try {
         </nav>
 
         <div class="helper">
-            <small>Sesion actual</small>
-            <p><?= htmlspecialchars($currentDisplayName, ENT_QUOTES, 'UTF-8') ?> esta emitiendo pases dentro de la zona operativa de empleados.</p>
             <form method="post" action="/logout.php" class="inline-form">
                 <?= auth_csrf_input($config) ?>
                 <button type="submit">Cerrar sesion</button>
@@ -1018,12 +1013,10 @@ try {
     <main class="content">
         <header class="topbar" id="inicio">
             <div class="title-block">
-                <h2>Genera, consulta y comparte pases con menos friccion</h2>
-                <p>Emite pases y consulta solamente los accesos que has generado, ahora en un flujo más claro y más rápido de operar.</p>
+                <h2>Panel de pases</h2>
             </div>
             <div class="top-actions">
                 <div class="ghost-chip">Sesion activa: <strong><?= htmlspecialchars($currentDisplayName, ENT_QUOTES, 'UTF-8') ?></strong></div>
-                <button type="button" class="secondary" onclick="document.getElementById('emitidos').scrollIntoView({behavior:'smooth'});">Ver emitidos</button>
                 <button type="button" class="primary" onclick="document.getElementById('visitor_name').focus();">Nuevo pase</button>
             </div>
         </header>
