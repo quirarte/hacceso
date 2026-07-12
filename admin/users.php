@@ -596,6 +596,7 @@ try {
             <div class="muted">Administra empleados, usuarios web, llaves de emisor y pases temporales.</div>
         </div>
         <div class="topbar-actions">
+            <a href="/admin/access-monitor.php" class="secondary" style="text-decoration:none; display:inline-flex; align-items:center;">Pantalla de monitoreo</a>
             <div class="muted">Sesion: <strong><?= htmlspecialchars($currentAdminLabel, ENT_QUOTES, 'UTF-8') ?></strong> (ADMIN)</div>
             <form method="post" action="/logout.php" class="inline-form">
                 <?= auth_csrf_input($config) ?>
