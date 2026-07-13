@@ -159,17 +159,36 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
             const heroPlaceholderNode = document.getElementById('hero-placeholder');
             const bellSoundSource = '/admin/assets/audio/monitor-bell.wav';
             const errorSoundSource = '/admin/assets/audio/error.wav';
+            const messagingSoundSource = '/admin/assets/audio/mensajeria.wav';
             const pollIntervalMs = 3000;
 
             let lastAnnouncedEventId = null;
+            const announcedEventIds = new Set();
             let currentHighlightedEventId = null;
             let currentHighlightUntilMs = 0;
+            let currentHighlightedCodeId = null;
+            let currentHighlightedScannedAtMs = 0;
+            let currentHighlightedKind = 'access';
+            let lastAnnouncedMessagingAlertId = null;
             let audioUnlocked = false;
             let audioPlaybackToken = 0;
-            const audioPlayers = {
-                ok: new Audio(bellSoundSource),
-                error: new Audio(errorSoundSource),
+            let isFetchingFeed = false;
+            let audioUnlockPromise = null;
+            let audioContext = null;
+            let activeAudioSource = null;
+            let ownsAudioLease = false;
+            const announcedScanTimes = new Map();
+            const audioBuffers = new Map();
+            const audioSources = {
+                ok: bellSoundSource,
+                error: errorSoundSource,
+                messaging: messagingSoundSource,
             };
+            const monitorLeaseKey = 'hacceso-monitor-audio-lease';
+            const sharedAnnouncementKey = 'hacceso-monitor-last-audio-announcement';
+            const monitorTabId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const monitorLeaseDurationMs = 6000;
+            const sharedAnnouncementWindowMs = 6000;
 
             function escapeHtml(value) {
                 return String(value)
@@ -186,7 +205,7 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                 }
 
                 if (!Array.isArray(accesses) || accesses.length === 0) {
-                    recentAccessesNode.innerHTML = '<div class="empty-state">Aun no hay accesos exitosos registrados.</div>';
+                    recentAccessesNode.innerHTML = '<div class="empty-state">Aun no hay accesos registrados.</div>';
                     return;
                 }
 
@@ -213,12 +232,16 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                 if (currentHighlightedEventId !== null && nowMs < currentHighlightUntilMs) {
                     heroNameNode.hidden = false;
                     heroMetaNode.hidden = false;
+                    heroMetaNode.hidden = currentHighlightedKind === 'messaging';
                     heroPlaceholderNode.hidden = true;
                     return;
                 }
 
                 currentHighlightedEventId = null;
                 currentHighlightUntilMs = 0;
+                currentHighlightedCodeId = null;
+                currentHighlightedScannedAtMs = 0;
+                currentHighlightedKind = 'access';
                 heroNameNode.hidden = true;
                 heroNameNode.textContent = '';
                 heroMetaNode.hidden = true;
@@ -226,95 +249,277 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                 heroPlaceholderNode.hidden = false;
             }
 
-            Object.values(audioPlayers).forEach((audio) => {
-                audio.preload = 'auto';
-            });
-
-            function waitForEvent(target, eventName) {
-                return new Promise((resolve) => {
-                    const handleEvent = () => {
-                        target.removeEventListener(eventName, handleEvent);
-                        resolve();
-                    };
-
-                    target.addEventListener(eventName, handleEvent);
-                });
-            }
-
-            async function prepareAudioFromStart(targetAudio) {
-                if (!Number.isFinite(targetAudio.duration) || targetAudio.readyState < 3) {
-                    targetAudio.load();
-                    await waitForEvent(targetAudio, 'canplaythrough');
+            function getAudioContext() {
+                if (audioContext) {
+                    return audioContext;
                 }
 
-                targetAudio.pause();
-                targetAudio.currentTime = 0;
-
-                if (targetAudio.currentTime > 0.05) {
-                    targetAudio.load();
-                    await waitForEvent(targetAudio, 'canplaythrough');
-                    targetAudio.currentTime = 0;
+                const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextConstructor) {
+                    return null;
                 }
+
+                audioContext = new AudioContextConstructor();
+                return audioContext;
             }
 
-            function stopAllAudio() {
-                Object.values(audioPlayers).forEach((audio) => {
-                    try {
-                        audio.pause();
-                        audio.currentTime = 0;
-                    } catch (error) {
-                        // Ignoramos fallos del navegador al resetear el audio.
-                    }
-                });
-            }
-
-            async function playAudio(audioType) {
-                const playbackToken = ++audioPlaybackToken;
-                const targetAudio = audioPlayers[audioType] || audioPlayers.ok;
-
-                if (!targetAudio) {
+            function stopActiveAudioSource() {
+                if (!activeAudioSource) {
                     return;
                 }
 
-                try {
-                    stopAllAudio();
-                    await prepareAudioFromStart(targetAudio);
+                const source = activeAudioSource;
+                activeAudioSource = null;
+                source.onended = null;
 
-                    if (playbackToken !== audioPlaybackToken) {
+                try {
+                    source.stop(0);
+                } catch (error) {
+                    // La fuente puede haber terminado justo antes de detenerla.
+                }
+
+                try {
+                    source.disconnect();
+                } catch (error) {
+                    // La fuente ya puede estar desconectada.
+                }
+            }
+
+            function cancelAudioPlayback() {
+                audioPlaybackToken += 1;
+                stopActiveAudioSource();
+            }
+
+            async function loadAudioBuffer(audioType) {
+                const existingBuffer = audioBuffers.get(audioType);
+                if (existingBuffer) {
+                    return existingBuffer;
+                }
+
+                const context = getAudioContext();
+                if (!context || !audioSources[audioType]) {
+                    throw new Error('Web Audio no disponible');
+                }
+
+                const pendingBuffer = fetch(audioSources[audioType], {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                })
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+
+                        return response.arrayBuffer();
+                    })
+                    .then((arrayBuffer) => context.decodeAudioData(arrayBuffer));
+
+                audioBuffers.set(audioType, pendingBuffer);
+
+                try {
+                    const buffer = await pendingBuffer;
+                    audioBuffers.set(audioType, buffer);
+                    return buffer;
+                } catch (error) {
+                    audioBuffers.delete(audioType);
+                    throw error;
+                }
+            }
+
+            async function playAudio(audioType) {
+                if (!ownsAudioLease) {
+                    return;
+                }
+
+                const context = getAudioContext();
+                if (!context) {
+                    return;
+                }
+
+                const playbackToken = ++audioPlaybackToken;
+                stopActiveAudioSource();
+
+                try {
+                    if (context.state === 'suspended') {
+                        await context.resume();
+                    }
+
+                    const buffer = await loadAudioBuffer(audioType);
+                    if (playbackToken !== audioPlaybackToken || !ownsAudioLease) {
                         return;
                     }
 
-                    stopAllAudio();
-                    await targetAudio.play();
-                    audioUnlocked = true;
+                    const source = context.createBufferSource();
+                    source.buffer = buffer;
+                    source.loop = false;
+                    source.connect(context.destination);
+                    source.onended = () => {
+                        if (activeAudioSource === source) {
+                            activeAudioSource = null;
+                            source.disconnect();
+                        }
+                    };
+                    activeAudioSource = source;
+                    source.start(0);
+                    audioUnlocked = context.state === 'running';
                 } catch (error) {
-                    // Intentaremos desbloquear audio en la primera interaccion del usuario.
+                    // El navegador intentara desbloquear Web Audio con la primera interaccion.
+                }
+            }
+
+            function wasRecentlyAnnouncedForCode(codeId, scannedAtMs) {
+                if (!codeId || !Number.isFinite(scannedAtMs)) {
+                    return false;
+                }
+
+                const previousScannedAtMs = announcedScanTimes.get(codeId);
+
+                return Number.isFinite(previousScannedAtMs)
+                    && scannedAtMs >= previousScannedAtMs
+                    && scannedAtMs - previousScannedAtMs <= sharedAnnouncementWindowMs;
+            }
+
+            function claimSharedAudioAnnouncement(signature) {
+                try {
+                    const rawAnnouncement = window.localStorage.getItem(sharedAnnouncementKey);
+                    if (rawAnnouncement) {
+                        const previousAnnouncement = JSON.parse(rawAnnouncement);
+                        if (
+                            previousAnnouncement &&
+                            previousAnnouncement.signature === signature &&
+                            Number.isFinite(previousAnnouncement.at) &&
+                            Date.now() - previousAnnouncement.at <= sharedAnnouncementWindowMs
+                        ) {
+                            return false;
+                        }
+                    }
+
+                    window.localStorage.setItem(sharedAnnouncementKey, JSON.stringify({
+                        signature,
+                        at: Date.now(),
+                    }));
+                } catch (error) {
+                    // Si localStorage no esta disponible, la deduplicacion local continua funcionando.
+                }
+
+                return true;
+            }
+
+            function markEventAsAnnounced(eventId, codeId, scannedAtMs) {
+                if (!eventId) {
+                    return;
+                }
+
+                announcedEventIds.add(eventId);
+                lastAnnouncedEventId = eventId;
+
+                if (codeId && Number.isFinite(scannedAtMs)) {
+                    announcedScanTimes.set(codeId, scannedAtMs);
                 }
             }
 
             async function unlockAudio() {
-                if (audioUnlocked) {
+                if (!ownsAudioLease || audioUnlocked || audioUnlockPromise) {
+                    return;
+                }
+
+                audioUnlockPromise = (async () => {
+                    try {
+                        const context = getAudioContext();
+                        if (!context) {
+                            return;
+                        }
+
+                        await context.resume();
+                        audioUnlocked = context.state === 'running';
+                    } catch (error) {
+                        audioUnlocked = false;
+                    } finally {
+                        audioUnlockPromise = null;
+                    }
+                })();
+
+                await audioUnlockPromise;
+            }
+
+            function readAudioLease() {
+                try {
+                    const rawLease = window.localStorage.getItem(monitorLeaseKey);
+                    if (!rawLease) {
+                        return null;
+                    }
+
+                    const lease = JSON.parse(rawLease);
+                    if (!lease || typeof lease.id !== 'string' || !Number.isFinite(lease.expiresAt)) {
+                        return null;
+                    }
+
+                    return lease;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            function claimAudioLease() {
+                const lease = {
+                    id: monitorTabId,
+                    expiresAt: Date.now() + monitorLeaseDurationMs,
+                };
+
+                try {
+                    window.localStorage.setItem(monitorLeaseKey, JSON.stringify(lease));
+                } catch (error) {
+                    // Si el navegador bloquea localStorage, esta pestaña trabaja sola.
+                }
+
+                ownsAudioLease = true;
+            }
+
+            function refreshAudioLease() {
+                const currentLease = readAudioLease();
+
+                if (!currentLease || currentLease.expiresAt <= Date.now() || currentLease.id === monitorTabId) {
+                    claimAudioLease();
+                    return;
+                }
+
+                if (ownsAudioLease) {
+                    ownsAudioLease = false;
+                    audioUnlocked = false;
+                    cancelAudioPlayback();
+                }
+            }
+
+            function releaseAudioLease() {
+                const currentLease = readAudioLease();
+                if (!currentLease || currentLease.id !== monitorTabId) {
                     return;
                 }
 
                 try {
-                    stopAllAudio();
-                    for (const targetAudio of Object.values(audioPlayers)) {
-                        await prepareAudioFromStart(targetAudio);
-                        targetAudio.muted = true;
-                        await targetAudio.play();
-                        targetAudio.pause();
-                        targetAudio.currentTime = 0;
-                        targetAudio.muted = false;
-                    }
-                    audioUnlocked = true;
+                    window.localStorage.removeItem(monitorLeaseKey);
                 } catch (error) {
-                    Object.values(audioPlayers).forEach((audio) => {
-                        audio.muted = false;
-                    });
-                    audioUnlocked = false;
+                    // El navegador puede impedir cambios durante el cierre de la pestaña.
                 }
             }
+
+            window.addEventListener('storage', (event) => {
+                if (event.key !== monitorLeaseKey || !event.newValue) {
+                    return;
+                }
+
+                const currentLease = readAudioLease();
+                if (currentLease && currentLease.id !== monitorTabId && ownsAudioLease) {
+                    ownsAudioLease = false;
+                    audioUnlocked = false;
+                    cancelAudioPlayback();
+                }
+            });
+
+            claimAudioLease();
+            window.setInterval(refreshAudioLease, 2000);
+            window.addEventListener('beforeunload', releaseAudioLease);
 
             function applyPayload(payload, shouldAnnounce) {
                 const recentAccesses = Array.isArray(payload.recent_accesses) ? payload.recent_accesses : [];
@@ -324,8 +529,70 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
 
                 renderRecentAccesses(recentAccesses);
 
+                const messagingAlert = payload.messaging_alert && typeof payload.messaging_alert === 'object'
+                    ? payload.messaging_alert
+                    : null;
+
+                if (messagingAlert && typeof messagingAlert.alert_id === 'string') {
+                    currentHighlightedEventId = `messaging:${messagingAlert.alert_id}`;
+                    currentHighlightedCodeId = null;
+                    currentHighlightedScannedAtMs = 0;
+                    currentHighlightedKind = 'messaging';
+                    currentHighlightUntilMs = Date.parse(messagingAlert.expires_at || '');
+
+                    if (!Number.isFinite(currentHighlightUntilMs)) {
+                        currentHighlightUntilMs = Date.now() + 30000;
+                    }
+
+                    heroNameNode.textContent = 'Mensajería';
+                    heroNameNode.style.color = '#f4d03f';
+                    heroNameNode.style.textTransform = 'none';
+                    heroMetaNode.textContent = '';
+                    heroMetaNode.hidden = true;
+                    heroPlaceholderNode.hidden = true;
+                    heroNameNode.hidden = false;
+
+                    if (!shouldAnnounce) {
+                        lastAnnouncedMessagingAlertId = messagingAlert.alert_id;
+                    } else if (
+                        messagingAlert.alert_id !== lastAnnouncedMessagingAlertId &&
+                        ownsAudioLease
+                    ) {
+                        lastAnnouncedMessagingAlertId = messagingAlert.alert_id;
+                        const sharedAnnouncementClaimed = claimSharedAudioAnnouncement(
+                            `messaging:${messagingAlert.alert_id}`
+                        );
+
+                        if (sharedAnnouncementClaimed) {
+                            void playAudio('messaging');
+                        }
+                    }
+
+                    return;
+                }
+
                 if (highlightedAccess && typeof highlightedAccess.event_id === 'string') {
+                    const nextCodeId = String(highlightedAccess.code_id || '');
+                    const nextScannedAtMs = Date.parse(highlightedAccess.scanned_at || '');
+                    const hasActiveHighlight = currentHighlightedEventId !== null && Date.now() < currentHighlightUntilMs;
+                    const shouldKeepCurrentHighlight =
+                        hasActiveHighlight &&
+                        currentHighlightedCodeId !== null &&
+                        nextCodeId !== '' &&
+                        nextCodeId === currentHighlightedCodeId &&
+                        Number.isFinite(nextScannedAtMs) &&
+                        nextScannedAtMs <= currentHighlightedScannedAtMs &&
+                        highlightedAccess.event_id !== currentHighlightedEventId;
+
+                    if (shouldKeepCurrentHighlight) {
+                        renderHero(Date.now());
+                        return;
+                    }
+
                     currentHighlightedEventId = highlightedAccess.event_id;
+                    currentHighlightedCodeId = nextCodeId !== '' ? nextCodeId : null;
+                    currentHighlightedScannedAtMs = Number.isFinite(nextScannedAtMs) ? nextScannedAtMs : 0;
+                    currentHighlightedKind = 'access';
                     currentHighlightUntilMs = Date.parse(highlightedAccess.highlight_until_iso || '');
 
                     if (!Number.isFinite(currentHighlightUntilMs)) {
@@ -339,18 +606,40 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                     heroNameNode.textContent = `${highlightedAccess.visitor_name || ''} - ${Number.isFinite(companionsExpected) ? companionsExpected : 0}`;
                     heroMetaNode.textContent = issuerName;
                     heroNameNode.style.color = isValidAccess ? 'var(--accent)' : 'var(--danger)';
+                    heroNameNode.style.textTransform = 'uppercase';
 
-                    if (shouldAnnounce && lastAnnouncedEventId !== highlightedAccess.event_id) {
-                        playAudio(isValidAccess ? 'ok' : 'error');
+                    if (
+                        shouldAnnounce &&
+                        highlightedAccess.event_id !== lastAnnouncedEventId &&
+                        !announcedEventIds.has(highlightedAccess.event_id)
+                    ) {
+                        const duplicateScanRecentlyAnnounced = wasRecentlyAnnouncedForCode(
+                            nextCodeId,
+                            nextScannedAtMs
+                        );
+                        const announcementIdentity = nextCodeId || `${highlightedAccess.visitor_name || ''}|${companionsExpected}`;
+                        const announcementSignature = announcementIdentity;
+                        markEventAsAnnounced(highlightedAccess.event_id, nextCodeId, nextScannedAtMs);
+
+                        const sharedAnnouncementClaimed = ownsAudioLease
+                            ? claimSharedAudioAnnouncement(announcementSignature)
+                            : false;
+                        if (!duplicateScanRecentlyAnnounced && sharedAnnouncementClaimed && ownsAudioLease) {
+                            void playAudio(isValidAccess ? 'ok' : 'error');
+                        }
                     }
-
-                    lastAnnouncedEventId = highlightedAccess.event_id;
                 }
 
                 renderHero(Date.now());
             }
 
             async function fetchFeed(isInitialLoad) {
+                if (isFetchingFeed) {
+                    return;
+                }
+
+                isFetchingFeed = true;
+
                 try {
                     const response = await fetch(feedUrl, {
                         method: 'GET',
@@ -370,6 +659,8 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                     applyPayload(payload, !isInitialLoad);
                 } catch (error) {
                     connectionStatusNode.textContent = 'Sin conexion con el feed';
+                } finally {
+                    isFetchingFeed = false;
                 }
             }
 
@@ -381,13 +672,9 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                 window.addEventListener(eventName, unlockAudio, {passive: true, once: true});
             });
 
-            Object.values(audioPlayers).forEach((audio) => {
-                try {
-                    audio.load();
-                } catch (error) {
-                    // Si falla la precarga inicial, se intentara de nuevo al reproducir.
-                }
-            });
+            void loadAudioBuffer('ok').catch(() => {});
+            void loadAudioBuffer('error').catch(() => {});
+            void loadAudioBuffer('messaging').catch(() => {});
 
             fetchFeed(true);
             window.setInterval(() => {

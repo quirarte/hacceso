@@ -114,6 +114,47 @@ try {
     $now = new DateTimeImmutable('now');
     $nowSql = $now->format('Y-m-d H:i:s');
 
+    // Some QR readers submit the same frame more than once. Keep that
+    // transport retry from becoming a second monitor event.
+    $dedupFromSql = $now->modify('-5 seconds')->format('Y-m-d H:i:s');
+    $recentEventStmt = $pdo->prepare(
+        'SELECT result, visitor_name_snapshot
+         FROM scan_events
+         WHERE code_id = :code_id
+           AND device_id = :device_id
+           AND scanned_at >= :dedup_from
+           AND scanned_at <= :scanned_at
+         ORDER BY scanned_at DESC, created_at DESC
+         LIMIT 1'
+    );
+    $recentEventStmt->execute([
+        'code_id' => $codeId,
+        'device_id' => $deviceId,
+        'dedup_from' => $dedupFromSql,
+        'scanned_at' => $nowSql,
+    ]);
+    $recentEvent = $recentEventStmt->fetch();
+
+    if (is_array($recentEvent)) {
+        $pdo->commit();
+
+        $deduplicatedResponse = [
+            'ok' => true,
+            'message' => 'QR duplicado ignorado',
+            'result' => (string)$recentEvent['result'],
+            'qr_length' => strlen($codeId),
+            'device' => $deviceId,
+            'scanned_at' => $now->format(DateTimeInterface::ATOM),
+            'deduplicated' => true,
+        ];
+
+        if ($recentEvent['visitor_name_snapshot'] !== null) {
+            $deduplicatedResponse['visitor_name'] = (string)$recentEvent['visitor_name_snapshot'];
+        }
+
+        json_response(200, $deduplicatedResponse);
+    }
+
     $result = 'INEXISTENT';
     $visitorName = null;
     $companionsExpected = null;

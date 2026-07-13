@@ -14,6 +14,7 @@ const char* password = "Luna2014";
 
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
+const char* messagingEndpoint = "http://hacceso.hacedores.com/api/messaging_alert.php";
 const char* apiKey = "4YtYUPP1bh_4ZUAJtT1GB9TTOGkPwzvVsvnZPAa0LrI";
 const char* deviceId = "recepcion-01";
 
@@ -21,6 +22,7 @@ const char* deviceId = "recepcion-01";
 HardwareSerial QRSerial(2);
 static const int QR_RX_PIN = 13; // ESP32 RX <- TX scanner
 static const int QR_TX_PIN = 14; // ESP32 TX -> RX scanner
+static const int MESSAGING_BUTTON_PIN = 27; // Boton entre GPIO27 y GND
 
 // ======== DISPLAY LCD 16x2 I2C ========
 static const uint8_t LCD_I2C_ADDRESS = 0x27;
@@ -29,14 +31,22 @@ static const uint8_t LCD_ROWS = 2;
 LiquidCrystal_PCF8574 lcd(LCD_I2C_ADDRESS);
 
 const unsigned long resultDisplayMs = 60000; // mantener resultado 60s
+const unsigned long messagingDisplayMs = 30000;
 unsigned long lastDisplayEventAt = 0;
+unsigned long displayHoldDurationMs = resultDisplayMs;
 bool isShowingResult = false;
 
 String qrBuffer = "";
 String lastQR = "";
 unsigned long lastQRTime = 0;
-const unsigned long dedupWindowMs = 3000;   // evita doble lectura inmediata
+const unsigned long dedupWindowMs = 5000;   // evita doble lectura inmediata
 const unsigned long frameTimeoutMs = 120;   // para scanners sin \n/\r
+const unsigned long buttonDebounceMs = 50;
+const unsigned long messagingCooldownMs = 30000;
+bool lastButtonReading = HIGH;
+bool stableButtonState = HIGH;
+unsigned long lastButtonChangeAt = 0;
+unsigned long lastMessagingAlertAt = 0;
 
 String trimToLCD(const String& text) {
   String out = text;
@@ -46,7 +56,12 @@ String trimToLCD(const String& text) {
   return out;
 }
 
-void lcdPrint2Lines(const String& line1, const String& line2, bool markAsResult = false) {
+void lcdPrint2Lines(
+  const String& line1,
+  const String& line2,
+  bool markAsResult = false,
+  unsigned long holdDurationMs = resultDisplayMs
+) {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(trimToLCD(line1));
@@ -55,6 +70,7 @@ void lcdPrint2Lines(const String& line1, const String& line2, bool markAsResult 
   if (markAsResult) {
     isShowingResult = true;
     lastDisplayEventAt = millis();
+    displayHoldDurationMs = holdDurationMs;
   }
 }
 
@@ -89,6 +105,10 @@ String extractJsonString(const String& json, const String& key) {
 void showIdleDisplay() {
   lcdPrint2Lines("Hacceso Activo", "Esperando QR");
   isShowingResult = false;
+}
+
+void showMessagingAlertOnLCD() {
+  lcdPrint2Lines("Avisando", "Mensajeria", true, messagingDisplayMs);
 }
 
 void showApiResultOnLCD(const String& responseBody) {
@@ -205,6 +225,69 @@ bool sendQR(const String& qrText) {
   return ok;
 }
 
+bool sendMessagingAlert() {
+  if (WiFi.status() != WL_CONNECTED) {
+    if (!connectWiFi(10000)) {
+      showMessagingAlertOnLCD();
+      return false;
+    }
+  }
+
+  showMessagingAlertOnLCD();
+
+  HTTPClient http;
+  http.begin(messagingEndpoint);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("User-Agent", "ESP32-QR-Client/1.0");
+  http.addHeader("X-API-Key", apiKey);
+  http.setConnectTimeout(8000);
+  http.setTimeout(8000);
+
+  String safeDevice = String(deviceId);
+  safeDevice.replace("\\", "\\\\");
+  safeDevice.replace("\"", "\\\"");
+
+  String body = "{\"device_id\":\"" + safeDevice + "\"}";
+  int code = http.POST(body);
+  bool ok = code >= 200 && code < 300;
+
+  if (ok) {
+    Serial.println("Alerta de Mensajeria enviada");
+  } else {
+    Serial.print("Error alerta Mensajeria HTTP ");
+    Serial.println(code);
+  }
+
+  http.end();
+  return ok;
+}
+
+void pollMessagingButton() {
+  const unsigned long now = millis();
+  const bool reading = digitalRead(MESSAGING_BUTTON_PIN);
+
+  if (reading != lastButtonReading) {
+    lastButtonChangeAt = now;
+    lastButtonReading = reading;
+  }
+
+  if ((now - lastButtonChangeAt) < buttonDebounceMs || reading == stableButtonState) {
+    return;
+  }
+
+  stableButtonState = reading;
+  if (stableButtonState != LOW) {
+    return;
+  }
+
+  if (lastMessagingAlertAt != 0 && (now - lastMessagingAlertAt) < messagingCooldownMs) {
+    return;
+  }
+
+  lastMessagingAlertAt = now;
+  sendMessagingAlert();
+}
+
 void processQR(const String& qrText) {
   if (!isQRValid(qrText)) {
     logMsg("QR invalido");
@@ -241,11 +324,14 @@ void setup() {
   Serial.print("Device ID: "); Serial.println(deviceId);
   Serial.print("API key configurada: "); Serial.println(strlen(apiKey) > 0 ? "si" : "no");
   QRSerial.begin(115200, SERIAL_8N1, QR_RX_PIN, QR_TX_PIN); // si falla prueba 9600 o 57600
+  pinMode(MESSAGING_BUTTON_PIN, INPUT_PULLUP);
   connectWiFi();
 }
 
 void loop() {
   static unsigned long lastByteAt = 0;
+
+  pollMessagingButton();
 
   while (QRSerial.available()) {
     char c = (char)QRSerial.read();
@@ -271,7 +357,7 @@ void loop() {
     qrBuffer = "";
   }
 
-  if (isShowingResult && (millis() - lastDisplayEventAt) >= resultDisplayMs) {
+  if (isShowingResult && (millis() - lastDisplayEventAt) >= displayHoldDurationMs) {
     showIdleDisplay();
   }
 }

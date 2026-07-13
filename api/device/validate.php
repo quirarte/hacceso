@@ -54,6 +54,41 @@ try {
     $now = new DateTimeImmutable('now');
     $nowSql = $now->format('Y-m-d H:i:s');
 
+    // Treat immediate retries from a QR reader as one scan event.
+    $dedupFromSql = $now->modify('-5 seconds')->format('Y-m-d H:i:s');
+    $recentEventStmt = $pdo->prepare(
+        'SELECT result, visitor_name_snapshot
+         FROM scan_events
+         WHERE code_id = :code_id
+           AND device_id = :device_id
+           AND scanned_at >= :dedup_from
+           AND scanned_at <= :scanned_at
+         ORDER BY scanned_at DESC, created_at DESC
+         LIMIT 1'
+    );
+    $recentEventStmt->execute([
+        'code_id' => $codeId,
+        'device_id' => $deviceId,
+        'dedup_from' => $dedupFromSql,
+        'scanned_at' => $nowSql,
+    ]);
+    $recentEvent = $recentEventStmt->fetch();
+
+    if (is_array($recentEvent)) {
+        $pdo->commit();
+
+        $deduplicatedResponse = [
+            'result' => (string)$recentEvent['result'],
+            'deduplicated' => true,
+        ];
+
+        if ($recentEvent['visitor_name_snapshot'] !== null) {
+            $deduplicatedResponse['visitor_name'] = (string)$recentEvent['visitor_name_snapshot'];
+        }
+
+        json_response(200, $deduplicatedResponse);
+    }
+
     $result = 'INEXISTENT';
     $visitorName = null;
     $companionsExpected = null;
@@ -65,6 +100,8 @@ try {
         $redisplayUntil = isset($invite['redisplay_until']) && $invite['redisplay_until'] !== null
             ? new DateTimeImmutable((string)$invite['redisplay_until'])
             : null;
+        $visitorName = (string)$invite['visitor_name'];
+        $companionsExpected = (int)$invite['companions_expected'];
 
         if ($status === 'REVOKED') {
             $result = 'REVOKED';
@@ -72,8 +109,6 @@ try {
             $result = 'EXPIRED';
         } elseif ($status === 'ACTIVE') {
             $result = 'OK_FIRST';
-            $visitorName = (string)$invite['visitor_name'];
-            $companionsExpected = (int)$invite['companions_expected'];
 
             $updateStmt = $pdo->prepare(
                 "UPDATE invites
@@ -86,8 +121,6 @@ try {
             ]);
         } elseif ($status === 'USED' && $redisplayUntil !== null && $now <= $redisplayUntil) {
             $result = 'OK_REDISPLAY';
-            $visitorName = (string)$invite['visitor_name'];
-            $companionsExpected = (int)$invite['companions_expected'];
         } else {
             $result = 'USED';
         }

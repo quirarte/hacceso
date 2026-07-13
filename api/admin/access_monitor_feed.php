@@ -24,7 +24,9 @@ try {
         $eventsStmt = $pdo->query(
             "SELECT
                 scan_events.id,
+                scan_events.code_id,
                 scan_events.scanned_at,
+                scan_events.created_at,
                 scan_events.visitor_name_snapshot,
                 scan_events.result,
                 invites.companions_expected,
@@ -35,11 +37,9 @@ try {
                 ON invites.code_id = scan_events.code_id
              LEFT JOIN employees
                 ON employees.uid = invites.issued_by_employee_uid
-             WHERE result IN ('OK_FIRST', 'OK_REDISPLAY', 'EXPIRED', 'USED')
-               AND scan_events.visitor_name_snapshot IS NOT NULL
-               AND scan_events.visitor_name_snapshot <> ''
-             ORDER BY scan_events.scanned_at DESC
-             LIMIT 10"
+             WHERE result IN ('OK_FIRST', 'OK_REDISPLAY', 'EXPIRED', 'REVOKED', 'USED', 'INEXISTENT')
+             ORDER BY scan_events.scanned_at DESC, scan_events.created_at DESC, scan_events.id DESC
+             LIMIT 50"
         );
         $events = $eventsStmt->fetchAll();
     } catch (Throwable $exception) {
@@ -48,10 +48,50 @@ try {
 
     $recentAccesses = [];
     $highlightedAccess = null;
+    $messagingAlert = null;
+    $latestScannedAtByCode = [];
     $now = new DateTimeImmutable('now');
 
-    foreach ($events as $index => $event) {
+    try {
+        $alertStmt = $pdo->query(
+            "SELECT id, alert_type, created_at, expires_at
+             FROM monitor_alerts
+             WHERE alert_type = 'MESSAGING'
+               AND expires_at > NOW()
+             ORDER BY created_at DESC
+             LIMIT 1"
+        );
+        $alert = $alertStmt->fetch();
+
+        if (is_array($alert)) {
+            $messagingAlert = [
+                'alert_id' => (string)$alert['id'],
+                'alert_type' => (string)$alert['alert_type'],
+                'created_at' => (new DateTimeImmutable((string)$alert['created_at']))->format(DateTimeInterface::ATOM),
+                'expires_at' => (new DateTimeImmutable((string)$alert['expires_at']))->format(DateTimeInterface::ATOM),
+            ];
+        }
+    } catch (Throwable $exception) {
+        // La tabla de alertas puede no existir antes del primer aviso.
+    }
+
+    foreach ($events as $event) {
         $scannedAt = new DateTimeImmutable((string)$event['scanned_at']);
+        $codeId = (string)$event['code_id'];
+        $scannedAtTimestamp = $scannedAt->getTimestamp();
+
+        if (
+            $codeId !== '' &&
+            isset($latestScannedAtByCode[$codeId]) &&
+            $latestScannedAtByCode[$codeId] - $scannedAtTimestamp <= 5
+        ) {
+            continue;
+        }
+
+        if ($codeId !== '') {
+            $latestScannedAtByCode[$codeId] = $scannedAtTimestamp;
+        }
+
         $highlightUntil = $scannedAt->modify('+2 minutes');
         $weekdayNumber = (int)$scannedAt->format('N');
         $weekdayLabel = $weekdayLabels[$weekdayNumber] ?? $scannedAt->format('l');
@@ -61,9 +101,15 @@ try {
             $issuerLabel = trim((string)($event['issued_by_employee_uid'] ?? ''));
         }
 
+        $visitorLabel = trim((string)($event['visitor_name_snapshot'] ?? ''));
+        if ($visitorLabel === '') {
+            $visitorLabel = 'QR no registrado';
+        }
+
         $normalizedEvent = [
             'event_id' => (string)$event['id'],
-            'visitor_name' => (string)$event['visitor_name_snapshot'],
+            'code_id' => $codeId,
+            'visitor_name' => $visitorLabel,
             'companions_expected' => (int)($event['companions_expected'] ?? 0),
             'issuer_name' => $issuerLabel,
             'result' => (string)$event['result'],
@@ -80,8 +126,12 @@ try {
 
         $recentAccesses[] = $normalizedEvent;
 
-        if ($index === 0 && $highlightUntil > $now) {
+        if ($highlightedAccess === null && $highlightUntil > $now) {
             $highlightedAccess = $normalizedEvent;
+        }
+
+        if (count($recentAccesses) >= 10) {
+            break;
         }
     }
 
@@ -90,6 +140,7 @@ try {
         'server_time' => $now->format(DateTimeInterface::ATOM),
         'recent_accesses' => $recentAccesses,
         'highlighted_access' => $highlightedAccess,
+        'messaging_alert' => $messagingAlert,
     ]);
 } catch (Throwable $exception) {
     json_response(500, [
