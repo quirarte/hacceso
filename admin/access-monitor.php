@@ -5,8 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
 
 $pdo = db_pdo($config);
-$currentUser = auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
-$backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/employee/passes.php';
+auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
 ?>
 <!doctype html>
 <html lang="es">
@@ -22,6 +21,7 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
             --line: rgba(255, 255, 255, 0.08);
             --muted: #8a8a8a;
             --muted-strong: #b4b4b4;
+            --accent: #3fbf63;
             --danger: #ff3b30;
         }
 
@@ -45,68 +45,51 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
             padding: 20px 28px 28px;
         }
 
-        .topbar {
+        .clock-row {
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-
-        .topbar a {
-            color: var(--muted-strong);
-            text-decoration: none;
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            padding: 10px 14px;
-        }
-
-        .topbar a:hover {
-            color: #ffffff;
-            border-color: rgba(255, 255, 255, 0.2);
+            justify-content: flex-end;
+            margin-bottom: 2px;
         }
 
         .status {
-            color: var(--muted);
+            color: #3fbf63;
             font-size: 12px;
             letter-spacing: 0.08em;
             text-transform: uppercase;
+            margin-bottom: 0;
         }
 
         .recent-accesses {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 16px;
         }
 
         .recent-item {
-            padding: 12px 14px;
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            background: var(--panel);
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 2px 0;
             color: var(--muted);
-            min-height: 72px;
         }
 
         .recent-item time {
-            display: block;
             font-size: 12px;
-            margin-bottom: 6px;
-            color: #9b9b9b;
+            color: #7a7a7a;
+            flex: 0 0 auto;
         }
 
         .recent-item strong {
-            display: block;
-            font-size: 15px;
-            font-weight: 600;
-            color: #c3c3c3;
+            font-size: 13px;
+            font-weight: 500;
+            color: #9a9a9a;
         }
 
         .empty-state {
             color: var(--muted);
-            font-size: 14px;
-            padding: 16px 0;
+            font-size: 12px;
+            padding: 4px 0;
         }
 
         .hero {
@@ -121,12 +104,19 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
         .hero-name {
             margin: 0;
             max-width: 1400px;
-            color: var(--danger);
-            font-size: clamp(68px, 11vw, 180px);
+            color: var(--accent);
+            font-size: clamp(54px, 8.8vw, 144px);
             line-height: 0.95;
             letter-spacing: 0.01em;
             text-transform: uppercase;
             word-break: break-word;
+        }
+
+        .hero-meta {
+            margin: 12px 0 0;
+            color: #b6b6b6;
+            font-size: clamp(18px, 3vw, 48px);
+            line-height: 1.05;
         }
 
         .hero-placeholder {
@@ -137,35 +127,16 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
             text-transform: uppercase;
         }
 
-        .footer-note {
-            color: #5f5f5f;
-            font-size: 12px;
-            text-align: center;
-            margin-top: 16px;
-        }
-
         @media (max-width: 720px) {
             body {
                 padding: 14px;
-            }
-
-            .topbar {
-                flex-direction: column;
-            }
-
-            .recent-accesses {
-                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <div class="status">
-            Monitoreo en vivo de accesos
-            <div id="connection-status">Conectando...</div>
-        </div>
-        <a href="<?= htmlspecialchars($backHref, ENT_QUOTES, 'UTF-8') ?>">Volver al panel</a>
+    <div class="clock-row">
+        <div class="status" id="connection-status">Conectando...</div>
     </div>
 
     <section id="recent-accesses" class="recent-accesses" aria-label="Ultimos 10 accesos"></section>
@@ -174,14 +145,9 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
         <div>
             <p id="hero-placeholder" class="hero-placeholder">Esperando siguiente acceso</p>
             <h1 id="hero-name" class="hero-name" hidden></h1>
+            <p id="hero-meta" class="hero-meta" hidden></p>
         </div>
     </main>
-
-    <p class="footer-note">Audio esperado en <code>/admin/assets/audio/monitor-bell.mp3</code>. Si el navegador bloquea el sonido, interactua una vez con la pagina para habilitarlo.</p>
-
-    <audio id="bell-sound" preload="auto">
-        <source src="/admin/assets/audio/monitor-bell.mp3" type="audio/mpeg">
-    </audio>
 
     <script>
         (() => {
@@ -189,13 +155,21 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
             const recentAccessesNode = document.getElementById('recent-accesses');
             const connectionStatusNode = document.getElementById('connection-status');
             const heroNameNode = document.getElementById('hero-name');
+            const heroMetaNode = document.getElementById('hero-meta');
             const heroPlaceholderNode = document.getElementById('hero-placeholder');
-            const bellSoundNode = document.getElementById('bell-sound');
+            const bellSoundSource = '/admin/assets/audio/monitor-bell.wav';
+            const errorSoundSource = '/admin/assets/audio/error.wav';
             const pollIntervalMs = 3000;
 
             let lastAnnouncedEventId = null;
             let currentHighlightedEventId = null;
             let currentHighlightUntilMs = 0;
+            let audioUnlocked = false;
+            let audioPlaybackToken = 0;
+            const audioPlayers = {
+                ok: new Audio(bellSoundSource),
+                error: new Audio(errorSoundSource),
+            };
 
             function escapeHtml(value) {
                 return String(value)
@@ -219,23 +193,26 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
                 recentAccessesNode.innerHTML = accesses.map((access) => {
                     const scannedAt = escapeHtml(access.scanned_at_label || '');
                     const visitorName = escapeHtml(access.visitor_name || 'Sin nombre');
+                    const companionsExpected = escapeHtml(access.companions_expected ?? 0);
+                    const issuerName = escapeHtml(access.issuer_name || 'Sin emisor');
 
                     return `
                         <article class="recent-item">
                             <time>${scannedAt}</time>
-                            <strong>${visitorName}</strong>
+                            <strong>${visitorName} - ${companionsExpected} - ${issuerName}</strong>
                         </article>
                     `;
                 }).join('');
             }
 
             function renderHero(nowMs) {
-                if (!heroNameNode || !heroPlaceholderNode) {
+                if (!heroNameNode || !heroMetaNode || !heroPlaceholderNode) {
                     return;
                 }
 
                 if (currentHighlightedEventId !== null && nowMs < currentHighlightUntilMs) {
                     heroNameNode.hidden = false;
+                    heroMetaNode.hidden = false;
                     heroPlaceholderNode.hidden = true;
                     return;
                 }
@@ -244,19 +221,98 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
                 currentHighlightUntilMs = 0;
                 heroNameNode.hidden = true;
                 heroNameNode.textContent = '';
+                heroMetaNode.hidden = true;
+                heroMetaNode.textContent = '';
                 heroPlaceholderNode.hidden = false;
             }
 
-            async function playBell() {
-                if (!bellSoundNode) {
+            Object.values(audioPlayers).forEach((audio) => {
+                audio.preload = 'auto';
+            });
+
+            function waitForEvent(target, eventName) {
+                return new Promise((resolve) => {
+                    const handleEvent = () => {
+                        target.removeEventListener(eventName, handleEvent);
+                        resolve();
+                    };
+
+                    target.addEventListener(eventName, handleEvent);
+                });
+            }
+
+            async function prepareAudioFromStart(targetAudio) {
+                if (!Number.isFinite(targetAudio.duration) || targetAudio.readyState < 3) {
+                    targetAudio.load();
+                    await waitForEvent(targetAudio, 'canplaythrough');
+                }
+
+                targetAudio.pause();
+                targetAudio.currentTime = 0;
+
+                if (targetAudio.currentTime > 0.05) {
+                    targetAudio.load();
+                    await waitForEvent(targetAudio, 'canplaythrough');
+                    targetAudio.currentTime = 0;
+                }
+            }
+
+            function stopAllAudio() {
+                Object.values(audioPlayers).forEach((audio) => {
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } catch (error) {
+                        // Ignoramos fallos del navegador al resetear el audio.
+                    }
+                });
+            }
+
+            async function playAudio(audioType) {
+                const playbackToken = ++audioPlaybackToken;
+                const targetAudio = audioPlayers[audioType] || audioPlayers.ok;
+
+                if (!targetAudio) {
                     return;
                 }
 
                 try {
-                    bellSoundNode.currentTime = 0;
-                    await bellSoundNode.play();
+                    stopAllAudio();
+                    await prepareAudioFromStart(targetAudio);
+
+                    if (playbackToken !== audioPlaybackToken) {
+                        return;
+                    }
+
+                    stopAllAudio();
+                    await targetAudio.play();
+                    audioUnlocked = true;
                 } catch (error) {
-                    // Algunos navegadores bloquean autoplay hasta la primera interaccion.
+                    // Intentaremos desbloquear audio en la primera interaccion del usuario.
+                }
+            }
+
+            async function unlockAudio() {
+                if (audioUnlocked) {
+                    return;
+                }
+
+                try {
+                    stopAllAudio();
+                    for (const targetAudio of Object.values(audioPlayers)) {
+                        await prepareAudioFromStart(targetAudio);
+                        targetAudio.muted = true;
+                        await targetAudio.play();
+                        targetAudio.pause();
+                        targetAudio.currentTime = 0;
+                        targetAudio.muted = false;
+                    }
+                    audioUnlocked = true;
+                } catch (error) {
+                    Object.values(audioPlayers).forEach((audio) => {
+                        audio.muted = false;
+                    });
+                    audioUnlocked = false;
                 }
             }
 
@@ -276,10 +332,16 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
                         currentHighlightUntilMs = Date.now();
                     }
 
-                    heroNameNode.textContent = highlightedAccess.visitor_name || '';
+                    const companionsExpected = Number.parseInt(highlightedAccess.companions_expected || 0, 10);
+                    const issuerName = highlightedAccess.issuer_name || '';
+                    const result = String(highlightedAccess.result || '');
+                    const isValidAccess = result === 'OK_FIRST' || result === 'OK_REDISPLAY';
+                    heroNameNode.textContent = `${highlightedAccess.visitor_name || ''} - ${Number.isFinite(companionsExpected) ? companionsExpected : 0}`;
+                    heroMetaNode.textContent = issuerName;
+                    heroNameNode.style.color = isValidAccess ? 'var(--accent)' : 'var(--danger)';
 
                     if (shouldAnnounce && lastAnnouncedEventId !== highlightedAccess.event_id) {
-                        playBell();
+                        playAudio(isValidAccess ? 'ok' : 'error');
                     }
 
                     lastAnnouncedEventId = highlightedAccess.event_id;
@@ -304,7 +366,7 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
                     }
 
                     const payload = await response.json();
-                    connectionStatusNode.textContent = `Actualizado ${new Date().toLocaleTimeString('es-MX')}`;
+                    connectionStatusNode.textContent = new Date().toLocaleTimeString('es-MX');
                     applyPayload(payload, !isInitialLoad);
                 } catch (error) {
                     connectionStatusNode.textContent = 'Sin conexion con el feed';
@@ -314,6 +376,18 @@ $backHref = $currentUser['role'] === AUTH_ROLE_ADMIN ? '/admin/users.php' : '/em
             window.setInterval(() => {
                 renderHero(Date.now());
             }, 1000);
+
+            ['pointerdown', 'keydown', 'touchstart'].forEach((eventName) => {
+                window.addEventListener(eventName, unlockAudio, {passive: true, once: true});
+            });
+
+            Object.values(audioPlayers).forEach((audio) => {
+                try {
+                    audio.load();
+                } catch (error) {
+                    // Si falla la precarga inicial, se intentara de nuevo al reproducir.
+                }
+            });
 
             fetchFeed(true);
             window.setInterval(() => {

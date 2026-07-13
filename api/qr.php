@@ -125,6 +125,8 @@ try {
         $redisplayUntil = isset($invite['redisplay_until']) && $invite['redisplay_until'] !== null
             ? new DateTimeImmutable((string)$invite['redisplay_until'])
             : null;
+        $visitorName = (string)$invite['visitor_name'];
+        $companionsExpected = (int)$invite['companions_expected'];
 
         if ($status === 'REVOKED') {
             $result = 'REVOKED';
@@ -132,8 +134,6 @@ try {
             $result = 'EXPIRED';
         } elseif ($status === 'ACTIVE') {
             $result = 'OK_FIRST';
-            $visitorName = (string)$invite['visitor_name'];
-            $companionsExpected = (int)$invite['companions_expected'];
 
             $updateStmt = $pdo->prepare(
                 "UPDATE invites
@@ -146,8 +146,6 @@ try {
             ]);
         } elseif ($status === 'USED' && $redisplayUntil !== null && $now <= $redisplayUntil) {
             $result = 'OK_REDISPLAY';
-            $visitorName = (string)$invite['visitor_name'];
-            $companionsExpected = (int)$invite['companions_expected'];
         } else {
             $result = 'USED';
         }
@@ -181,7 +179,7 @@ try {
         'scanned_at' => $now->format(DateTimeInterface::ATOM),
     ];
 
-    if ($result === 'OK_FIRST' || $result === 'OK_REDISPLAY') {
+    if ($visitorName !== null) {
         $response['visitor_name'] = $visitorName;
         $response['companions_expected'] = $companionsExpected;
     }

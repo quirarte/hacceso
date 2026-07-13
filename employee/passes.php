@@ -23,6 +23,67 @@ function invite_status_badge_class(string $effectiveStatus): string
     };
 }
 
+function format_spanish_datetime_label(DateTimeImmutable $dateTime): string
+{
+    $weekdayLabels = [
+        1 => 'Lunes',
+        2 => 'Martes',
+        3 => 'Miercoles',
+        4 => 'Jueves',
+        5 => 'Viernes',
+        6 => 'Sabado',
+        7 => 'Domingo',
+    ];
+    $monthLabels = [
+        1 => 'enero',
+        2 => 'febrero',
+        3 => 'marzo',
+        4 => 'abril',
+        5 => 'mayo',
+        6 => 'junio',
+        7 => 'julio',
+        8 => 'agosto',
+        9 => 'septiembre',
+        10 => 'octubre',
+        11 => 'noviembre',
+        12 => 'diciembre',
+    ];
+
+    return sprintf(
+        '%s %s %s, %s',
+        $weekdayLabels[(int)$dateTime->format('N')] ?? $dateTime->format('l'),
+        $dateTime->format('j'),
+        $monthLabels[(int)$dateTime->format('n')] ?? $dateTime->format('F'),
+        $dateTime->format('H:i')
+    );
+}
+
+function format_spanish_qr_expiration_label(DateTimeImmutable $dateTime): string
+{
+    $monthLabels = [
+        1 => 'enero',
+        2 => 'febrero',
+        3 => 'marzo',
+        4 => 'abril',
+        5 => 'mayo',
+        6 => 'junio',
+        7 => 'julio',
+        8 => 'agosto',
+        9 => 'septiembre',
+        10 => 'octubre',
+        11 => 'noviembre',
+        12 => 'diciembre',
+    ];
+
+    return sprintf(
+        '%s de %s, %s, %s',
+        $dateTime->format('j'),
+        $monthLabels[(int)$dateTime->format('n')] ?? $dateTime->format('F'),
+        $dateTime->format('Y'),
+        $dateTime->format('H:i')
+    );
+}
+
 $pdo = db_pdo($config);
 $currentUser = auth_require_roles($pdo, $config, [AUTH_ROLE_EMPLOYEE]);
 $currentEmployeeUid = (string)$currentUser['employee_uid'];
@@ -31,6 +92,7 @@ $currentDisplayName = (string)$currentUser['resolved_display_name'];
 $error = null;
 $success = null;
 $generatedPassCodeId = null;
+$generatedPassValidToLabel = null;
 
 auth_session_start($config);
 
@@ -149,6 +211,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         $_SESSION['employee_pass_flash_success'] = 'Pase de acceso creado correctamente.';
         $_SESSION['employee_pass_flash_code_id'] = $codeId;
+        $_SESSION['employee_pass_flash_valid_to_label'] = format_spanish_qr_expiration_label($validTo);
 
         $redirectQuery = [
             'invite_status' => $inviteStatusFilter,
@@ -176,8 +239,7 @@ $formValidFrom = trim((string)($_POST['valid_from'] ?? $defaultValidFromValue));
 $formValidTo = trim((string)($_POST['valid_to'] ?? $defaultValidToValue));
 $activeInvitesCount = 0;
 $issuedTodayCount = 0;
-$expiringSoonCount = 0;
-$expiredPendingCount = 0;
+$usedTodayCount = 0;
 $requestNow = new DateTimeImmutable('now');
 $requestNowSql = $requestNow->format('Y-m-d H:i:s');
 
@@ -189,6 +251,11 @@ if (isset($_SESSION['employee_pass_flash_success']) && is_string($_SESSION['empl
 if (isset($_SESSION['employee_pass_flash_code_id']) && is_string($_SESSION['employee_pass_flash_code_id'])) {
     $generatedPassCodeId = $_SESSION['employee_pass_flash_code_id'];
     unset($_SESSION['employee_pass_flash_code_id']);
+}
+
+if (isset($_SESSION['employee_pass_flash_valid_to_label']) && is_string($_SESSION['employee_pass_flash_valid_to_label'])) {
+    $generatedPassValidToLabel = $_SESSION['employee_pass_flash_valid_to_label'];
+    unset($_SESSION['employee_pass_flash_valid_to_label']);
 }
 
 try {
@@ -220,7 +287,6 @@ try {
 
     $todayStart = $requestNow->setTime(0, 0, 0);
     $tomorrowStart = $todayStart->modify('+1 day');
-    $soonLimit = $requestNow->modify('+24 hours');
 
     foreach ($invites as $row) {
         $rowStatus = (string)$row['status'];
@@ -236,12 +302,11 @@ try {
             $issuedTodayCount++;
         }
 
-        if ($rowEffectiveStatus === 'ACTIVE' && $rowValidTo <= $soonLimit) {
-            $expiringSoonCount++;
-        }
-
-        if ($rowEffectiveStatus === 'EXPIRED') {
-            $expiredPendingCount++;
+        if ($rowStatus === 'USED' && !empty($row['used_at'])) {
+            $rowUsedAt = new DateTimeImmutable((string)$row['used_at']);
+            if ($rowUsedAt >= $todayStart && $rowUsedAt < $tomorrowStart) {
+                $usedTodayCount++;
+            }
         }
     }
 
@@ -301,7 +366,6 @@ try {
             --radius-xl: 28px;
             --radius-lg: 22px;
             --radius-md: 16px;
-            --sidebar-width: 290px;
         }
 
         * {
@@ -320,174 +384,33 @@ try {
                 linear-gradient(180deg, #f4f8f5 0%, var(--bg) 100%);
         }
 
-        .app-shell {
-            display: grid;
-            grid-template-columns: var(--sidebar-width) 1fr;
-            min-height: 100vh;
-        }
-
-        .sidebar {
-            position: relative;
-            overflow: hidden;
-            padding: 28px 22px;
-            color: #eef8f3;
-            background:
-                radial-gradient(circle at top right, rgba(108, 213, 170, 0.22), transparent 34%),
-                linear-gradient(180deg, var(--surface-dark) 0%, #112721 100%);
-        }
-
-        .sidebar::after {
-            content: "";
-            position: absolute;
-            right: -56px;
-            bottom: -56px;
-            width: 180px;
-            height: 180px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .brand,
-        .sidebar-card,
-        .nav-group,
-        .helper {
-            position: relative;
-            z-index: 1;
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 28px;
-        }
-
-        .brand-mark {
-            width: 46px;
-            height: 46px;
-            display: grid;
-            place-items: center;
-            border-radius: 15px;
-            font-size: 22px;
-            font-weight: 800;
-            color: #103126;
-            background: linear-gradient(135deg, #9ce8c8 0%, #f2db8d 100%);
-        }
-
-        .brand h1 {
-            margin: 0;
-            font-size: 22px;
-            letter-spacing: 0.02em;
-        }
-
-        .sidebar-card,
-        .nav-group {
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(12px);
-            border-radius: 22px;
-        }
-
-        .sidebar-card {
-            padding: 18px;
-            margin-bottom: 18px;
-        }
-
-        .sidebar-card small {
-            display: block;
-            color: rgba(238, 248, 243, 0.72);
-            text-transform: uppercase;
-            letter-spacing: 0.10em;
-            font-size: 11px;
-            margin-bottom: 10px;
-        }
-
-        .sidebar-card strong {
-            display: block;
-            font-size: 20px;
-            margin-bottom: 6px;
-        }
-
-        .sidebar-card span {
-            color: rgba(238, 248, 243, 0.76);
-            font-size: 14px;
-        }
-
-        .nav-group {
-            padding: 12px;
-        }
-
-        .nav-link {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 14px;
-            border-radius: 16px;
-            color: #f4fbf8;
-            text-decoration: none;
-            font-weight: 700;
-        }
-
-        .nav-link + .nav-link {
-            margin-top: 6px;
-        }
-
-        .nav-link.active {
-            color: #103126;
-            background: linear-gradient(135deg, #a6efcf 0%, #f4e1a8 100%);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
-        }
-
-        .nav-pill {
-            min-width: 28px;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 12px;
-            text-align: center;
-            color: rgba(244, 251, 248, 0.84);
-            background: rgba(255, 255, 255, 0.10);
-        }
-
-        .nav-link.active .nav-pill {
-            color: #103126;
-            background: rgba(16, 49, 38, 0.12);
-        }
-
-        .helper {
-            margin-top: 18px;
-            padding: 18px;
-            border-radius: 22px;
-            background: rgba(11, 23, 19, 0.26);
-        }
-
         .helper-link {
-            display: block;
-            width: 100%;
-            margin-bottom: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             padding: 12px 16px;
             border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #eef8f3;
+            border: 1px solid var(--line);
+            color: var(--text);
             text-align: center;
             text-decoration: none;
             font-weight: 700;
-            background: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.70);
         }
 
-        .helper button {
-            width: 100%;
+        .topbar button,
+        .topbar .helper-link {
             border: 0;
             border-radius: 14px;
             padding: 12px 16px;
             font: inherit;
             font-weight: 800;
-            color: #123227;
-            background: #f1e1a9;
             cursor: pointer;
         }
 
         .content {
+            max-width: 1360px;
+            margin: 0 auto;
             padding: 28px;
         }
 
@@ -541,7 +464,6 @@ try {
 
         .top-actions button,
         .cta-actions .primary {
-            border: 0;
             border-radius: 16px;
             padding: 13px 18px;
             font-weight: 800;
@@ -551,9 +473,20 @@ try {
             box-shadow: 0 14px 28px rgba(29, 143, 107, 0.24);
         }
 
+        .top-actions form {
+            margin: 0;
+        }
+
+        .top-actions .secondary {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.70);
+            border: 1px solid var(--line);
+            box-shadow: none;
+        }
+
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 16px;
             margin-bottom: 24px;
         }
@@ -857,15 +790,7 @@ try {
         }
 
         @media (max-width: 920px) {
-            .app-shell {
-                grid-template-columns: 1fr;
-            }
-
             .content {
-                padding: 18px;
-            }
-
-            .sidebar {
                 padding: 18px;
             }
         }
@@ -884,74 +809,20 @@ try {
     </style>
 </head>
 <body>
-<div class="app-shell">
-    <aside class="sidebar">
-        <div class="brand">
-            <div class="brand-mark">H</div>
-            <div>
-                <h1>Hacceso</h1>
-            </div>
-        </div>
-
-        <div class="sidebar-card">
-            <small>Sesion</small>
-            <strong><?= htmlspecialchars($currentDisplayName, ENT_QUOTES, 'UTF-8') ?></strong>
-            <span>Empleado emisor: <?= htmlspecialchars($currentEmployeeUid, ENT_QUOTES, 'UTF-8') ?></span>
-        </div>
-
-        <nav class="nav-group" aria-label="Navegacion principal">
-            <a class="nav-link" href="#inicio">
-                <span>Inicio</span>
-                <span class="nav-pill"><?= htmlspecialchars((string)$activeInvitesCount, ENT_QUOTES, 'UTF-8') ?></span>
-            </a>
-            <a class="nav-link active" href="#generar">
-                <span>Generar pase</span>
-                <span class="nav-pill">+</span>
-            </a>
-            <a class="nav-link" href="#emitidos">
-                <span>Pases emitidos</span>
-                <span class="nav-pill"><?= htmlspecialchars((string)count($invites), ENT_QUOTES, 'UTF-8') ?></span>
-            </a>
-            <a class="nav-link" href="#detalle">
-                <span>Detalle y QR</span>
-                <span class="nav-pill"><?= $selectedInvite !== null ? '1' : '0' ?></span>
-            </a>
-        </nav>
-
-        <div class="helper">
-            <a class="helper-link" href="/admin/access-monitor.php">Abrir monitoreo</a>
-            <form method="post" action="/logout.php" class="inline-form">
-                <?= auth_csrf_input($config) ?>
-                <button type="submit">Cerrar sesion</button>
-            </form>
-        </div>
-    </aside>
-
     <main class="content">
         <header class="topbar" id="inicio">
             <div class="title-block">
                 <h2>Panel de pases</h2>
-                <p>Genera pases temporales, consulta su vigencia y recupera su QR para compartirlo con el visitante.</p>
             </div>
             <div class="top-actions">
                 <div class="ghost-chip">Sesion activa: <strong><?= htmlspecialchars($currentDisplayName, ENT_QUOTES, 'UTF-8') ?></strong></div>
-                <button type="button" onclick="document.getElementById('visitor_name').focus();">Nuevo pase</button>
+                <a class="helper-link" href="/admin/access-monitor.php" target="_blank" rel="noopener noreferrer">Monitor</a>
+                <form method="post" action="/logout.php">
+                    <?= auth_csrf_input($config) ?>
+                    <button type="submit" class="secondary">Cerrar sesion</button>
+                </form>
             </div>
         </header>
-
-        <?php if ($success !== null): ?>
-            <div class="ok">
-                <strong>Exito:</strong> <?= htmlspecialchars($success, ENT_QUOTES, 'UTF-8') ?>
-                <?php if ($generatedPassCodeId !== null): ?>
-                    <div style="margin-top:10px;">Code ID generado: <code id="new-pass-code-id"><?= htmlspecialchars($generatedPassCodeId, ENT_QUOTES, 'UTF-8') ?></code></div>
-                    <div class="qr-box">
-                        <button type="button" id="btn-generate-qr">Generar QR</button>
-                        <button type="button" id="btn-download-qr" style="display:none;">Descargar PNG</button>
-                        <div id="qr-container" style="margin-top:12px;"></div>
-                    </div>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
 
         <?php if ($error !== null): ?>
             <div class="err"><strong>Error:</strong> <?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
@@ -959,7 +830,7 @@ try {
 
         <section class="stats-grid">
             <article class="stat-card">
-                <small>Activos</small>
+                <small>Vigentes</small>
                 <div class="stat-row">
                     <div class="stat-value"><?= htmlspecialchars((string)$activeInvitesCount, ENT_QUOTES, 'UTF-8') ?></div>
                     <span class="badge success">vigentes</span>
@@ -973,26 +844,17 @@ try {
                 </div>
             </article>
             <article class="stat-card">
-                <small>Por vencer</small>
+                <small>Usados hoy</small>
                 <div class="stat-row">
-                    <div class="stat-value"><?= htmlspecialchars((string)$expiringSoonCount, ENT_QUOTES, 'UTF-8') ?></div>
-                    <span class="badge warning">24h</span>
-                </div>
-            </article>
-            <article class="stat-card">
-                <small>Expirados</small>
-                <div class="stat-row">
-                    <div class="stat-value"><?= htmlspecialchars((string)$expiredPendingCount, ENT_QUOTES, 'UTF-8') ?></div>
-                    <span class="badge danger">pendientes</span>
+                    <div class="stat-value"><?= htmlspecialchars((string)$usedTodayCount, ENT_QUOTES, 'UTF-8') ?></div>
+                    <span class="badge info">hoy</span>
                 </div>
             </article>
         </section>
 
         <section class="content-grid">
             <section class="panel" id="generar">
-                <div class="section-kicker">Nuevo acceso</div>
                 <h3>Generar pase temporal</h3>
-                <p class="section-copy">El pase quedara asociado a tu usuario y podra escanearse durante la ventana de vigencia que definas.</p>
 
                 <form method="post">
                     <?= auth_csrf_input($config) ?>
@@ -1022,7 +884,6 @@ try {
                     </div>
 
                     <div class="cta-row">
-                        <p>Se generara un QR unico listo para compartir con el visitante.</p>
                         <div class="cta-actions">
                             <button type="submit" class="primary">Crear pase</button>
                         </div>
@@ -1033,9 +894,7 @@ try {
             <aside class="detail-card" id="detalle">
                 <div class="detail-top">
                     <div>
-                        <div class="section-kicker">Detalle</div>
                         <h3>Pase seleccionado</h3>
-                        <p>Consulta datos del pase y genera de nuevo su QR cuando lo necesites.</p>
                     </div>
                 </div>
 
@@ -1046,18 +905,13 @@ try {
                         $selectedValidTo = new DateTimeImmutable((string)$selectedInvite['valid_to']);
                         $selectedEffectiveStatus = invite_effective_status((string)$selectedInvite['status'], $selectedValidTo, $requestNow);
                     ?>
+                    <div style="margin-bottom:16px;">
+                        <strong class="badge <?= htmlspecialchars(invite_status_badge_class($selectedEffectiveStatus), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($selectedEffectiveStatus, ENT_QUOTES, 'UTF-8') ?></strong>
+                    </div>
                     <div class="detail-grid">
                         <div class="detail-item">
                             <small>Visitante</small>
                             <strong><?= htmlspecialchars((string)$selectedInvite['visitor_name'], ENT_QUOTES, 'UTF-8') ?></strong>
-                        </div>
-                        <div class="detail-item">
-                            <small>Estado</small>
-                            <strong class="badge <?= htmlspecialchars(invite_status_badge_class($selectedEffectiveStatus), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($selectedEffectiveStatus, ENT_QUOTES, 'UTF-8') ?></strong>
-                        </div>
-                        <div class="detail-item">
-                            <small>Code ID</small>
-                            <strong><code id="detail-code-id"><?= htmlspecialchars((string)$selectedInvite['code_id'], ENT_QUOTES, 'UTF-8') ?></code></strong>
                         </div>
                         <div class="detail-item">
                             <small>Acompanantes</small>
@@ -1082,9 +936,12 @@ try {
                     </div>
 
                     <div class="qr-box">
-                        <button type="button" class="js-generate-detail-qr" data-code-id="<?= htmlspecialchars((string)$selectedInvite['code_id'], ENT_QUOTES, 'UTF-8') ?>">Generar QR del detalle</button>
-                        <button type="button" id="btn-download-detail-qr" style="display:none;">Descargar PNG</button>
-                        <div id="detail-qr-container" style="margin-top:12px;"></div>
+                        <div
+                            id="detail-qr-container"
+                            data-code-id="<?= htmlspecialchars((string)$selectedInvite['code_id'], ENT_QUOTES, 'UTF-8') ?>"
+                            data-valid-to-label="<?= htmlspecialchars(format_spanish_qr_expiration_label($selectedValidTo), ENT_QUOTES, 'UTF-8') ?>"
+                            style="margin-top:12px;"
+                        ></div>
                     </div>
                 <?php endif; ?>
             </aside>
@@ -1093,7 +950,6 @@ try {
         <section class="table-card" id="emitidos">
             <div class="table-head">
                 <div>
-                    <div class="section-kicker">Historico</div>
                     <h3>Pases emitidos</h3>
                     <p>Lista de los ultimos 100 pases generados por tu usuario, con acceso rapido al detalle y al QR.</p>
                 </div>
@@ -1123,10 +979,8 @@ try {
                     <thead>
                         <tr>
                             <th>Visitante</th>
-                            <th>Code ID</th>
                             <th>Vigencia</th>
                             <th>Estado</th>
-                            <th>Emitido</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -1136,23 +990,24 @@ try {
                                 $rowValidTo = new DateTimeImmutable((string)$row['valid_to']);
                                 $rowEffectiveStatus = invite_effective_status((string)$row['status'], $rowValidTo, $requestNow);
                                 $rowBadgeClass = invite_status_badge_class($rowEffectiveStatus);
+                                $rowStatusLabel = $rowEffectiveStatus;
+                                if ($rowEffectiveStatus === 'USED' && !empty($row['used_at'])) {
+                                    $rowStatusLabel .= ' ' . format_spanish_datetime_label(new DateTimeImmutable((string)$row['used_at']));
+                                }
                             ?>
                             <tr>
                                 <td>
                                     <strong><?= htmlspecialchars((string)$row['visitor_name'], ENT_QUOTES, 'UTF-8') ?></strong>
                                     <div class="row-subtle"><?= htmlspecialchars((string)($row['visitor_phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
                                 </td>
-                                <td><code><?= htmlspecialchars((string)$row['code_id'], ENT_QUOTES, 'UTF-8') ?></code></td>
                                 <td>
                                     <div><?= htmlspecialchars((string)$row['valid_from'], ENT_QUOTES, 'UTF-8') ?></div>
-                                    <div class="row-subtle">hasta <?= htmlspecialchars((string)$row['valid_to'], ENT_QUOTES, 'UTF-8') ?></div>
+                                    <div class="row-subtle"><?= htmlspecialchars((string)$row['valid_to'], ENT_QUOTES, 'UTF-8') ?></div>
                                 </td>
-                                <td><span class="badge <?= htmlspecialchars($rowBadgeClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($rowEffectiveStatus, ENT_QUOTES, 'UTF-8') ?></span></td>
-                                <td><?= htmlspecialchars((string)$row['issued_at'], ENT_QUOTES, 'UTF-8') ?></td>
+                                <td><span class="badge <?= htmlspecialchars($rowBadgeClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($rowStatusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
                                 <td>
                                     <div class="table-actions">
                                         <a href="?invite_status=<?= urlencode($inviteStatusFilter) ?>&invite_id=<?= urlencode((string)$row['id']) ?>#detalle">Detalle</a>
-                                        <button type="button" class="js-generate-table-qr" data-code-id="<?= htmlspecialchars((string)$row['code_id'], ENT_QUOTES, 'UTF-8') ?>">Generar QR</button>
                                     </div>
                                 </td>
                             </tr>
@@ -1160,14 +1015,9 @@ try {
                     </tbody>
                 </table>
 
-                <div class="qr-box">
-                    <button type="button" id="btn-download-table-qr" style="display:none;">Descargar QR seleccionado</button>
-                    <div id="table-qr-container" style="margin-top:12px;"></div>
-                </div>
             <?php endif; ?>
         </section>
     </main>
-</div>
 
 <script src="/admin/assets/js/qrcode.min.js"></script>
 <script>
@@ -1176,26 +1026,18 @@ try {
     const downloadBtn = document.getElementById('btn-download-qr');
     const codeNode = document.getElementById('new-pass-code-id');
     const qrContainer = document.getElementById('qr-container');
-    const tableQrContainer = document.getElementById('table-qr-container');
-    const tableDownloadBtn = document.getElementById('btn-download-table-qr');
     const detailQrContainer = document.getElementById('detail-qr-container');
-    const detailDownloadBtn = document.getElementById('btn-download-detail-qr');
 
     let latestQrWrap = null;
     let latestCodeId = '';
-    let latestTableQrWrap = null;
-    let latestTableCodeId = '';
-    let latestDetailQrWrap = null;
-    let latestDetailCodeId = '';
 
-    function renderQr(targetContainer, codeId) {
+    function renderQr(targetContainer, codeId, validToLabel) {
         if (!targetContainer || !codeId || typeof QRCode === 'undefined') {
             return null;
         }
 
         targetContainer.innerHTML = '';
         const qrWrap = document.createElement('div');
-        targetContainer.appendChild(qrWrap);
 
         new QRCode(qrWrap, {
             text: codeId,
@@ -1203,7 +1045,53 @@ try {
             height: 240
         });
 
-        return qrWrap;
+        const qrCanvas = qrWrap.querySelector('canvas');
+        const qrImage = qrWrap.querySelector('img');
+
+        if (!qrCanvas && !qrImage) {
+            return qrWrap;
+        }
+
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = 280;
+        finalCanvas.height = 300;
+
+        const context = finalCanvas.getContext('2d');
+        if (!context) {
+            targetContainer.appendChild(qrWrap);
+            return qrWrap;
+        }
+
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+        const drawCaption = () => {
+            context.fillStyle = '#111111';
+            context.font = '12px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('Escanea en recepción de Hacedores', finalCanvas.width / 2, 270);
+            context.fillText(`Vence el: ${validToLabel || ''}hrs`, finalCanvas.width / 2, 286);
+            targetContainer.appendChild(finalCanvas);
+        };
+
+        if (qrCanvas) {
+            context.drawImage(qrCanvas, 20, 20, 240, 240);
+            drawCaption();
+            return finalCanvas;
+        }
+
+        qrImage.addEventListener('load', () => {
+            context.drawImage(qrImage, 20, 20, 240, 240);
+            drawCaption();
+        }, {once: true});
+
+        if (qrImage.complete) {
+            context.drawImage(qrImage, 20, 20, 240, 240);
+            drawCaption();
+        }
+
+        return finalCanvas;
     }
 
     function downloadQr(qrWrap, codeId) {
@@ -1234,7 +1122,7 @@ try {
     if (generateBtn && downloadBtn && codeNode && qrContainer) {
         generateBtn.addEventListener('click', () => {
             latestCodeId = codeNode.textContent.trim();
-            latestQrWrap = renderQr(qrContainer, latestCodeId);
+            latestQrWrap = renderQr(qrContainer, latestCodeId, codeNode.getAttribute('data-valid-to-label') || '');
             downloadBtn.style.display = latestQrWrap ? 'inline-block' : 'none';
         });
 
@@ -1243,40 +1131,9 @@ try {
         });
     }
 
-    document.querySelectorAll('.js-generate-table-qr').forEach((button) => {
-        button.addEventListener('click', () => {
-            latestTableCodeId = button.getAttribute('data-code-id') || '';
-            latestTableQrWrap = renderQr(tableQrContainer, latestTableCodeId);
-            if (tableDownloadBtn) {
-                tableDownloadBtn.style.display = latestTableQrWrap ? 'inline-block' : 'none';
-            }
-            const detailSection = document.getElementById('emitidos');
-            if (detailSection) {
-                detailSection.scrollIntoView({behavior: 'smooth', block: 'start'});
-            }
-        });
-    });
-
-    if (tableDownloadBtn) {
-        tableDownloadBtn.addEventListener('click', () => {
-            downloadQr(latestTableQrWrap, latestTableCodeId);
-        });
-    }
-
-    document.querySelectorAll('.js-generate-detail-qr').forEach((button) => {
-        button.addEventListener('click', () => {
-            latestDetailCodeId = button.getAttribute('data-code-id') || '';
-            latestDetailQrWrap = renderQr(detailQrContainer, latestDetailCodeId);
-            if (detailDownloadBtn) {
-                detailDownloadBtn.style.display = latestDetailQrWrap ? 'inline-block' : 'none';
-            }
-        });
-    });
-
-    if (detailDownloadBtn) {
-        detailDownloadBtn.addEventListener('click', () => {
-            downloadQr(latestDetailQrWrap, latestDetailCodeId);
-        });
+    if (detailQrContainer) {
+        const detailCodeId = detailQrContainer.getAttribute('data-code-id') || '';
+        renderQr(detailQrContainer, detailCodeId, detailQrContainer.getAttribute('data-valid-to-label') || '');
     }
 })();
 </script>

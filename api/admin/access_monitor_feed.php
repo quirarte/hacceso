@@ -6,18 +6,39 @@ require __DIR__ . '/../../src/bootstrap.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
+$weekdayLabels = [
+    1 => 'Lunes',
+    2 => 'Martes',
+    3 => 'Miercoles',
+    4 => 'Jueves',
+    5 => 'Viernes',
+    6 => 'Sabado',
+    7 => 'Domingo',
+];
+
 try {
     $pdo = db_pdo($config);
     auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
 
     try {
         $eventsStmt = $pdo->query(
-            "SELECT id, scanned_at, visitor_name_snapshot, result
+            "SELECT
+                scan_events.id,
+                scan_events.scanned_at,
+                scan_events.visitor_name_snapshot,
+                scan_events.result,
+                invites.companions_expected,
+                invites.issued_by_employee_uid,
+                employees.display_name AS issuer_display_name
              FROM scan_events
-             WHERE result IN ('OK_FIRST', 'OK_REDISPLAY')
-               AND visitor_name_snapshot IS NOT NULL
-               AND visitor_name_snapshot <> ''
-             ORDER BY scanned_at DESC
+             LEFT JOIN invites
+                ON invites.code_id = scan_events.code_id
+             LEFT JOIN employees
+                ON employees.uid = invites.issued_by_employee_uid
+             WHERE result IN ('OK_FIRST', 'OK_REDISPLAY', 'EXPIRED', 'USED')
+               AND scan_events.visitor_name_snapshot IS NOT NULL
+               AND scan_events.visitor_name_snapshot <> ''
+             ORDER BY scan_events.scanned_at DESC
              LIMIT 10"
         );
         $events = $eventsStmt->fetchAll();
@@ -32,12 +53,28 @@ try {
     foreach ($events as $index => $event) {
         $scannedAt = new DateTimeImmutable((string)$event['scanned_at']);
         $highlightUntil = $scannedAt->modify('+2 minutes');
+        $weekdayNumber = (int)$scannedAt->format('N');
+        $weekdayLabel = $weekdayLabels[$weekdayNumber] ?? $scannedAt->format('l');
+        $issuerLabel = trim((string)($event['issuer_display_name'] ?? ''));
+
+        if ($issuerLabel === '') {
+            $issuerLabel = trim((string)($event['issued_by_employee_uid'] ?? ''));
+        }
+
         $normalizedEvent = [
             'event_id' => (string)$event['id'],
             'visitor_name' => (string)$event['visitor_name_snapshot'],
+            'companions_expected' => (int)($event['companions_expected'] ?? 0),
+            'issuer_name' => $issuerLabel,
             'result' => (string)$event['result'],
+            'is_valid_access' => in_array((string)$event['result'], ['OK_FIRST', 'OK_REDISPLAY'], true),
             'scanned_at' => $scannedAt->format(DateTimeInterface::ATOM),
-            'scanned_at_label' => $scannedAt->format('Y-m-d H:i:s'),
+            'scanned_at_label' => sprintf(
+                '%s %s, %s',
+                $weekdayLabel,
+                $scannedAt->format('j'),
+                $scannedAt->format('H:i')
+            ),
             'highlight_until_iso' => $highlightUntil->format(DateTimeInterface::ATOM),
         ];
 
