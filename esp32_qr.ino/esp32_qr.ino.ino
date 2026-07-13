@@ -15,6 +15,7 @@ const char* password = "Luna2014";
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
 const char* messagingEndpoint = "http://hacceso.hacedores.com/api/messaging_alert.php";
+const char* monitorCommandsEndpoint = "http://hacceso.hacedores.com/api/device/monitor_commands.php";
 const char* apiKey = "4YtYUPP1bh_4ZUAJtT1GB9TTOGkPwzvVsvnZPAa0LrI";
 const char* deviceId = "recepcion-01";
 
@@ -32,6 +33,7 @@ LiquidCrystal_PCF8574 lcd(LCD_I2C_ADDRESS);
 
 const unsigned long resultDisplayMs = 60000; // mantener resultado 60s
 const unsigned long messagingDisplayMs = 30000;
+const unsigned long descendingDisplayMs = 30000;
 unsigned long lastDisplayEventAt = 0;
 unsigned long displayHoldDurationMs = resultDisplayMs;
 bool isShowingResult = false;
@@ -47,6 +49,10 @@ bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
 unsigned long lastButtonChangeAt = 0;
 unsigned long lastMessagingAlertAt = 0;
+bool messagingAlertPending = false;
+String lastMonitorCommandId = "";
+unsigned long lastMonitorPollAt = 0;
+const unsigned long monitorPollIntervalMs = 1000;
 
 String trimToLCD(const String& text) {
   String out = text;
@@ -118,7 +124,7 @@ void showApiResultOnLCD(const String& responseBody) {
   if (result == "OK_FIRST") {
     lcdPrint2Lines("ACCESO PERMITIDO", visitorName == "" ? "Bienvenido" : visitorName, true);
   } else if (result == "OK_REDISPLAY") {
-    lcdPrint2Lines("ACCESO REINGRESO", visitorName == "" ? "OK (5 min)" : visitorName, true);
+    lcdPrint2Lines("ACCESO REINGRESO", visitorName == "" ? "OK (60 seg)" : visitorName, true);
   } else if (result == "INEXISTENT") {
     lcdPrint2Lines("CODIGO INVALIDO", "No registrado", true);
   } else if (result == "EXPIRED") {
@@ -225,6 +231,10 @@ bool sendQR(const String& qrText) {
   return ok;
 }
 
+void showDescendingAlertOnLCD() {
+  lcdPrint2Lines("Vamos bajando", "", true, descendingDisplayMs);
+}
+
 bool sendMessagingAlert() {
   if (WiFi.status() != WL_CONNECTED) {
     if (!connectWiFi(10000)) {
@@ -232,8 +242,6 @@ bool sendMessagingAlert() {
       return false;
     }
   }
-
-  showMessagingAlertOnLCD();
 
   HTTPClient http;
   http.begin(messagingEndpoint);
@@ -285,7 +293,60 @@ void pollMessagingButton() {
   }
 
   lastMessagingAlertAt = now;
+  showMessagingAlertOnLCD();
+  messagingAlertPending = true;
+}
+
+void serviceMessagingAlert() {
+  if (!messagingAlertPending) {
+    return;
+  }
+
+  messagingAlertPending = false;
   sendMessagingAlert();
+}
+
+void pollMonitorCommands() {
+  const unsigned long now = millis();
+  if ((now - lastMonitorPollAt) < monitorPollIntervalMs) {
+    return;
+  }
+  lastMonitorPollAt = now;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  String url = String(monitorCommandsEndpoint) + "?device_id=" + String(deviceId);
+  if (lastMonitorCommandId.length() > 0) {
+    url += "&after_id=" + lastMonitorCommandId;
+  }
+
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("User-Agent", "ESP32-QR-Client/1.0");
+  http.addHeader("X-API-Key", apiKey);
+  http.setConnectTimeout(3000);
+  http.setTimeout(3000);
+
+  int code = http.GET();
+  if (code >= 200 && code < 300) {
+    String response = http.getString();
+    String alertId = extractJsonString(response, "alert_id");
+    if (alertId.length() > 0 && alertId != lastMonitorCommandId) {
+      lastMonitorCommandId = alertId;
+      String alertType = extractJsonString(response, "alert_type");
+      if (alertType == "DESCENDING") {
+        showDescendingAlertOnLCD();
+        logMsg("Orden recibida: Vamos bajando");
+      }
+    }
+  } else if (code > 0) {
+    Serial.print("Error consulta comandos HTTP ");
+    Serial.println(code);
+  }
+
+  http.end();
 }
 
 void processQR(const String& qrText) {
@@ -324,6 +385,7 @@ void setup() {
   Serial.print("Device ID: "); Serial.println(deviceId);
   Serial.print("API key configurada: "); Serial.println(strlen(apiKey) > 0 ? "si" : "no");
   QRSerial.begin(115200, SERIAL_8N1, QR_RX_PIN, QR_TX_PIN); // si falla prueba 9600 o 57600
+  Serial.println("UART QR lista: RX GPIO13, TX GPIO14, 115200 baud");
   pinMode(MESSAGING_BUTTON_PIN, INPUT_PULLUP);
   connectWiFi();
 }
@@ -331,14 +393,14 @@ void setup() {
 void loop() {
   static unsigned long lastByteAt = 0;
 
-  pollMessagingButton();
-
   while (QRSerial.available()) {
     char c = (char)QRSerial.read();
     lastByteAt = millis();
 
     if (c == '\n' || c == '\r') {
       if (qrBuffer.length() > 0) {
+        Serial.print("QR recibido por UART, longitud: ");
+        Serial.println(qrBuffer.length());
         processQR(qrBuffer);
         qrBuffer = "";
       }
@@ -353,9 +415,15 @@ void loop() {
 
   // Para scanners que no envian \n/\r
   if (qrBuffer.length() > 0 && (millis() - lastByteAt) > frameTimeoutMs) {
+    Serial.print("QR recibido por UART sin terminador, longitud: ");
+    Serial.println(qrBuffer.length());
     processQR(qrBuffer);
     qrBuffer = "";
   }
+
+  pollMessagingButton();
+  serviceMessagingAlert();
+  pollMonitorCommands();
 
   if (isShowingResult && (millis() - lastDisplayEventAt) >= displayHoldDurationMs) {
     showIdleDisplay();

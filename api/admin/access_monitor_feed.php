@@ -48,6 +48,7 @@ try {
 
     $recentAccesses = [];
     $highlightedAccess = null;
+    $activeMonitorAlert = null;
     $messagingAlert = null;
     $latestScannedAtByCode = [];
     $now = new DateTimeImmutable('now');
@@ -56,7 +57,7 @@ try {
         $alertStmt = $pdo->query(
             "SELECT id, alert_type, created_at, expires_at
              FROM monitor_alerts
-             WHERE alert_type = 'MESSAGING'
+             WHERE alert_type IN ('MESSAGING', 'DESCENDING')
                AND expires_at > NOW()
              ORDER BY created_at DESC
              LIMIT 1"
@@ -64,12 +65,16 @@ try {
         $alert = $alertStmt->fetch();
 
         if (is_array($alert)) {
-            $messagingAlert = [
+            $activeMonitorAlert = [
                 'alert_id' => (string)$alert['id'],
                 'alert_type' => (string)$alert['alert_type'],
                 'created_at' => (new DateTimeImmutable((string)$alert['created_at']))->format(DateTimeInterface::ATOM),
                 'expires_at' => (new DateTimeImmutable((string)$alert['expires_at']))->format(DateTimeInterface::ATOM),
             ];
+
+            if ($activeMonitorAlert['alert_type'] === 'MESSAGING') {
+                $messagingAlert = $activeMonitorAlert;
+            }
         }
     } catch (Throwable $exception) {
         // La tabla de alertas puede no existir antes del primer aviso.
@@ -92,7 +97,7 @@ try {
             $latestScannedAtByCode[$codeId] = $scannedAtTimestamp;
         }
 
-        $highlightUntil = $scannedAt->modify('+2 minutes');
+        $highlightUntil = $scannedAt->modify('+30 seconds');
         $weekdayNumber = (int)$scannedAt->format('N');
         $weekdayLabel = $weekdayLabels[$weekdayNumber] ?? $scannedAt->format('l');
         $issuerLabel = trim((string)($event['issuer_display_name'] ?? ''));
@@ -140,6 +145,7 @@ try {
         'server_time' => $now->format(DateTimeInterface::ATOM),
         'recent_accesses' => $recentAccesses,
         'highlighted_access' => $highlightedAccess,
+        'active_alert' => $activeMonitorAlert,
         'messaging_alert' => $messagingAlert,
     ]);
 } catch (Throwable $exception) {

@@ -152,6 +152,8 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
     <script>
         (() => {
             const feedUrl = '/api/admin/access_monitor_feed.php';
+            const monitorAlertUrl = '/api/admin/monitor_alert.php';
+            const monitorDeviceId = 'recepcion-01';
             const recentAccessesNode = document.getElementById('recent-accesses');
             const connectionStatusNode = document.getElementById('connection-status');
             const heroNameNode = document.getElementById('hero-name');
@@ -170,6 +172,7 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
             let currentHighlightedScannedAtMs = 0;
             let currentHighlightedKind = 'access';
             let lastAnnouncedMessagingAlertId = null;
+            let isSendingDownstairsAlert = false;
             let audioUnlocked = false;
             let audioPlaybackToken = 0;
             let isFetchingFeed = false;
@@ -232,7 +235,7 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                 if (currentHighlightedEventId !== null && nowMs < currentHighlightUntilMs) {
                     heroNameNode.hidden = false;
                     heroMetaNode.hidden = false;
-                    heroMetaNode.hidden = currentHighlightedKind === 'messaging';
+                    heroMetaNode.hidden = currentHighlightedKind !== 'access';
                     heroPlaceholderNode.hidden = true;
                     return;
                 }
@@ -520,54 +523,128 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
             claimAudioLease();
             window.setInterval(refreshAudioLease, 2000);
             window.addEventListener('beforeunload', releaseAudioLease);
+            window.addEventListener('keydown', handleMonitorKeydown);
+
+            function applyActiveMonitorAlert(alert, shouldAnnounce) {
+                const alertId = String(alert.alert_id || '');
+                if (alertId === '') {
+                    return false;
+                }
+
+                const alertType = String(alert.alert_type || '').toUpperCase();
+                const isDownstairsAlert = alertType === 'DESCENDING';
+                const previousEventId = currentHighlightedEventId;
+
+                currentHighlightedEventId = `alert:${alertId}`;
+                currentHighlightedCodeId = null;
+                currentHighlightedScannedAtMs = 0;
+                currentHighlightedKind = isDownstairsAlert ? 'descending' : 'messaging';
+                currentHighlightUntilMs = Date.parse(alert.expires_at || '');
+
+                if (!Number.isFinite(currentHighlightUntilMs)) {
+                    currentHighlightUntilMs = Date.now() + 30000;
+                }
+
+                heroNameNode.textContent = 'Mensajería';
+                heroNameNode.style.color = isDownstairsAlert ? '#79d8ff' : '#f4d03f';
+                heroNameNode.style.textTransform = 'none';
+                heroMetaNode.textContent = '';
+                heroMetaNode.hidden = true;
+                heroPlaceholderNode.hidden = true;
+                heroNameNode.hidden = false;
+
+                if (isDownstairsAlert) {
+                    if (previousEventId !== currentHighlightedEventId) {
+                        cancelAudioPlayback();
+                    }
+                    return true;
+                }
+
+                if (!shouldAnnounce) {
+                    lastAnnouncedMessagingAlertId = alertId;
+                } else if (
+                    alertId !== lastAnnouncedMessagingAlertId &&
+                    ownsAudioLease
+                ) {
+                    lastAnnouncedMessagingAlertId = alertId;
+                    const sharedAnnouncementClaimed = claimSharedAudioAnnouncement(
+                        `messaging:${alertId}`
+                    );
+
+                    if (sharedAnnouncementClaimed) {
+                        void playAudio('messaging');
+                    }
+                }
+
+                return true;
+            }
+
+            async function sendDownstairsAlert() {
+                if (isSendingDownstairsAlert) {
+                    return;
+                }
+
+                isSendingDownstairsAlert = true;
+
+                try {
+                    const response = await fetch(monitorAlertUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            device_id: monitorDeviceId,
+                            alert_type: 'DESCENDING',
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const alert = await response.json();
+                    if (alert && alert.alert_id) {
+                        applyActiveMonitorAlert(alert, false);
+                        renderHero(Date.now());
+                    }
+                } catch (error) {
+                    // El siguiente sondeo del feed intentara sincronizar el monitor.
+                } finally {
+                    isSendingDownstairsAlert = false;
+                }
+            }
+
+            function handleMonitorKeydown(event) {
+                if (
+                    event.repeat ||
+                    event.ctrlKey ||
+                    event.altKey ||
+                    event.metaKey ||
+                    String(event.key || '').toLowerCase() !== 'a'
+                ) {
+                    return;
+                }
+
+                void sendDownstairsAlert();
+            }
 
             function applyPayload(payload, shouldAnnounce) {
                 const recentAccesses = Array.isArray(payload.recent_accesses) ? payload.recent_accesses : [];
                 const highlightedAccess = payload.highlighted_access && typeof payload.highlighted_access === 'object'
                     ? payload.highlighted_access
                     : null;
+                const activeMonitorAlert = payload.active_alert && typeof payload.active_alert === 'object'
+                    ? payload.active_alert
+                    : payload.messaging_alert && typeof payload.messaging_alert === 'object'
+                        ? payload.messaging_alert
+                        : null;
 
                 renderRecentAccesses(recentAccesses);
 
-                const messagingAlert = payload.messaging_alert && typeof payload.messaging_alert === 'object'
-                    ? payload.messaging_alert
-                    : null;
-
-                if (messagingAlert && typeof messagingAlert.alert_id === 'string') {
-                    currentHighlightedEventId = `messaging:${messagingAlert.alert_id}`;
-                    currentHighlightedCodeId = null;
-                    currentHighlightedScannedAtMs = 0;
-                    currentHighlightedKind = 'messaging';
-                    currentHighlightUntilMs = Date.parse(messagingAlert.expires_at || '');
-
-                    if (!Number.isFinite(currentHighlightUntilMs)) {
-                        currentHighlightUntilMs = Date.now() + 30000;
-                    }
-
-                    heroNameNode.textContent = 'Mensajería';
-                    heroNameNode.style.color = '#f4d03f';
-                    heroNameNode.style.textTransform = 'none';
-                    heroMetaNode.textContent = '';
-                    heroMetaNode.hidden = true;
-                    heroPlaceholderNode.hidden = true;
-                    heroNameNode.hidden = false;
-
-                    if (!shouldAnnounce) {
-                        lastAnnouncedMessagingAlertId = messagingAlert.alert_id;
-                    } else if (
-                        messagingAlert.alert_id !== lastAnnouncedMessagingAlertId &&
-                        ownsAudioLease
-                    ) {
-                        lastAnnouncedMessagingAlertId = messagingAlert.alert_id;
-                        const sharedAnnouncementClaimed = claimSharedAudioAnnouncement(
-                            `messaging:${messagingAlert.alert_id}`
-                        );
-
-                        if (sharedAnnouncementClaimed) {
-                            void playAudio('messaging');
-                        }
-                    }
-
+                if (activeMonitorAlert && applyActiveMonitorAlert(activeMonitorAlert, shouldAnnounce)) {
                     return;
                 }
 

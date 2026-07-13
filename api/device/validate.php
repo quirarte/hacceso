@@ -112,7 +112,7 @@ try {
 
             $updateStmt = $pdo->prepare(
                 "UPDATE invites
-                 SET status = 'USED', used_at = :used_at, redisplay_until = DATE_ADD(:used_at, INTERVAL 5 MINUTE)
+                 SET status = 'USED', used_at = :used_at, redisplay_until = DATE_ADD(:used_at, INTERVAL 60 SECOND)
                  WHERE id = :id AND status = 'ACTIVE'"
             );
             $updateStmt->execute([
