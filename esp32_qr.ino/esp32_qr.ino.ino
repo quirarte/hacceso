@@ -9,8 +9,21 @@ static const int DISPLAY_SDA_PIN = 32;
 static const int DISPLAY_SCL_PIN = 33;
 
 // ======== WIFI ========
-const char* ssid = "jardin";
-const char* password = "Luna2014";
+struct WifiNetwork {
+  const char* ssid;
+  const char* password;
+};
+
+const WifiNetwork wifiNetworks[] = {
+  {"INFINITUM8CFB_5", "8795201320"},
+  {"jardin", "Luna2014"},
+  {"hacedores", "hagamosalgo"},
+  {"G10", "hacedores"},
+
+  // Agrega mas redes aqui, en el orden de prioridad:
+  // {"NombreDeLaRed", "ContrasenaDeLaRed"},
+};
+const size_t wifiNetworkCount = sizeof(wifiNetworks) / sizeof(wifiNetworks[0]);
 
 // ======== ENDPOINT FINAL ========
 const char* endpoint = "http://hacceso.hacedores.com/api/qr.php";
@@ -145,28 +158,49 @@ void logMsg(const String& msg) {
   Serial.println(msg);
 }
 
-bool connectWiFi(uint32_t timeoutMs = 20000) {
+bool connectWiFi(uint32_t timeoutMs = 10000) {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  lcdPrint2Lines("Conectando WiFi", "...");
 
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs) {
-    delay(500);
-    Serial.print(".");
+  for (size_t i = 0; i < wifiNetworkCount; i++) {
+    const WifiNetwork& network = wifiNetworks[i];
+    WiFi.disconnect();
+    delay(100);
+
+    Serial.print("Intentando WiFi ");
+    Serial.print(i + 1);
+    Serial.print("/");
+    Serial.print(wifiNetworkCount);
+    Serial.print(": ");
+    Serial.println(network.ssid);
+    lcdPrint2Lines("Conectando WiFi", String(network.ssid));
+
+    WiFi.begin(network.ssid, network.password);
+    unsigned long start = millis();
+    wl_status_t status = WiFi.status();
+    while (status != WL_CONNECTED && (millis() - start) < timeoutMs) {
+      delay(250);
+      status = WiFi.status();
+
+      if (status == WL_NO_SSID_AVAIL || status == WL_CONNECT_FAILED) {
+        break;
+      }
+    }
+
+    if (status == WL_CONNECTED) {
+      logMsg("WiFi conectado");
+      Serial.print("Red: "); Serial.println(network.ssid);
+      Serial.print("IP: "); Serial.println(WiFi.localIP());
+      lcdPrint2Lines("WiFi conectado", WiFi.localIP().toString());
+      delay(1200);
+      showIdleDisplay();
+      return true;
+    }
+
+    Serial.print("No se pudo conectar a: ");
+    Serial.println(network.ssid);
   }
-  Serial.println();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    logMsg("WiFi conectado");
-    Serial.print("IP: "); Serial.println(WiFi.localIP());
-    lcdPrint2Lines("WiFi conectado", WiFi.localIP().toString());
-    delay(1200);
-    showIdleDisplay();
-    return true;
-  }
-
-  logMsg("Error: no conecto WiFi");
+  logMsg("Error: ninguna red WiFi conecto");
   lcdPrint2Lines("WiFi sin enlace", "Reintentando...");
   return false;
 }
@@ -308,7 +342,10 @@ void serviceMessagingAlert() {
 
 void pollMonitorCommands() {
   const unsigned long now = millis();
-  if ((now - lastMonitorPollAt) < monitorPollIntervalMs) {
+  if ((now - lastMonitorPollAt) < monitorPollIntervalMs
+      || isShowingResult
+      || QRSerial.available() > 0
+      || qrBuffer.length() > 0) {
     return;
   }
   lastMonitorPollAt = now;

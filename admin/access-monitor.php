@@ -641,10 +641,23 @@ auth_require_roles($pdo, $config, [AUTH_ROLE_ADMIN, AUTH_ROLE_EMPLOYEE]);
                     : payload.messaging_alert && typeof payload.messaging_alert === 'object'
                         ? payload.messaging_alert
                         : null;
+                const alertCreatedAtMs = activeMonitorAlert
+                    ? Date.parse(activeMonitorAlert.created_at || '')
+                    : Number.NaN;
+                const accessScannedAtMs = highlightedAccess
+                    ? Date.parse(highlightedAccess.scanned_at || '')
+                    : Number.NaN;
+                const accessOverridesAlert = highlightedAccess !== null
+                    && Number.isFinite(accessScannedAtMs)
+                    && (!Number.isFinite(alertCreatedAtMs) || accessScannedAtMs >= alertCreatedAtMs);
 
                 renderRecentAccesses(recentAccesses);
 
-                if (activeMonitorAlert && applyActiveMonitorAlert(activeMonitorAlert, shouldAnnounce)) {
+                if (
+                    activeMonitorAlert &&
+                    !accessOverridesAlert &&
+                    applyActiveMonitorAlert(activeMonitorAlert, shouldAnnounce)
+                ) {
                     return;
                 }
 

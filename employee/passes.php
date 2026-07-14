@@ -84,6 +84,31 @@ function format_spanish_qr_expiration_label(DateTimeImmutable $dateTime): string
     );
 }
 
+function format_spanish_qr_validity_label(DateTimeImmutable $dateTime): string
+{
+    $monthLabels = [
+        1 => 'enero',
+        2 => 'febrero',
+        3 => 'marzo',
+        4 => 'abril',
+        5 => 'mayo',
+        6 => 'junio',
+        7 => 'julio',
+        8 => 'agosto',
+        9 => 'septiembre',
+        10 => 'octubre',
+        11 => 'noviembre',
+        12 => 'diciembre',
+    ];
+
+    return sprintf(
+        '%s de %s %s',
+        $dateTime->format('j'),
+        $monthLabels[(int)$dateTime->format('n')] ?? $dateTime->format('F'),
+        $dateTime->format('H:i')
+    );
+}
+
 $pdo = db_pdo($config);
 $currentUser = auth_require_roles($pdo, $config, [AUTH_ROLE_EMPLOYEE]);
 $currentEmployeeUid = (string)$currentUser['employee_uid'];
@@ -902,6 +927,7 @@ try {
                     <p class="muted">Selecciona un pase de la tabla para ver su detalle aqui.</p>
                 <?php else: ?>
                     <?php
+                        $selectedValidFrom = new DateTimeImmutable((string)$selectedInvite['valid_from']);
                         $selectedValidTo = new DateTimeImmutable((string)$selectedInvite['valid_to']);
                         $selectedEffectiveStatus = invite_effective_status((string)$selectedInvite['status'], $selectedValidTo, $requestNow);
                     ?>
@@ -939,7 +965,8 @@ try {
                         <div
                             id="detail-qr-container"
                             data-code-id="<?= htmlspecialchars((string)$selectedInvite['code_id'], ENT_QUOTES, 'UTF-8') ?>"
-                            data-valid-to-label="<?= htmlspecialchars(format_spanish_qr_expiration_label($selectedValidTo), ENT_QUOTES, 'UTF-8') ?>"
+                            data-valid-from-label="<?= htmlspecialchars(format_spanish_qr_validity_label($selectedValidFrom), ENT_QUOTES, 'UTF-8') ?>"
+                            data-valid-to-label="<?= htmlspecialchars(format_spanish_qr_validity_label($selectedValidTo), ENT_QUOTES, 'UTF-8') ?>"
                             style="margin-top:12px;"
                         ></div>
                     </div>
@@ -1031,7 +1058,7 @@ try {
     let latestQrWrap = null;
     let latestCodeId = '';
 
-    function renderQr(targetContainer, codeId, validToLabel) {
+    function renderQr(targetContainer, codeId, validFromLabel, validToLabel) {
         if (!targetContainer || !codeId || typeof QRCode === 'undefined') {
             return null;
         }
@@ -1067,11 +1094,12 @@ try {
 
         const drawCaption = () => {
             context.fillStyle = '#111111';
-            context.font = '12px Arial';
+            context.font = '10px Arial';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
-            context.fillText('Escanea en recepción de Hacedores', finalCanvas.width / 2, 270);
-            context.fillText(`Vence el: ${validToLabel || ''}hrs`, finalCanvas.width / 2, 286);
+            context.fillText('Escanea en recepción del edificio.', finalCanvas.width / 2, 266);
+            context.fillText(`Válido del ${validFromLabel || ''}`, finalCanvas.width / 2, 280);
+            context.fillText(`al ${validToLabel || ''}`, finalCanvas.width / 2, 294);
             targetContainer.appendChild(finalCanvas);
         };
 
@@ -1122,7 +1150,12 @@ try {
     if (generateBtn && downloadBtn && codeNode && qrContainer) {
         generateBtn.addEventListener('click', () => {
             latestCodeId = codeNode.textContent.trim();
-            latestQrWrap = renderQr(qrContainer, latestCodeId, codeNode.getAttribute('data-valid-to-label') || '');
+            latestQrWrap = renderQr(
+                qrContainer,
+                latestCodeId,
+                codeNode.getAttribute('data-valid-from-label') || '',
+                codeNode.getAttribute('data-valid-to-label') || ''
+            );
             downloadBtn.style.display = latestQrWrap ? 'inline-block' : 'none';
         });
 
@@ -1133,7 +1166,12 @@ try {
 
     if (detailQrContainer) {
         const detailCodeId = detailQrContainer.getAttribute('data-code-id') || '';
-        renderQr(detailQrContainer, detailCodeId, detailQrContainer.getAttribute('data-valid-to-label') || '');
+        renderQr(
+            detailQrContainer,
+            detailCodeId,
+            detailQrContainer.getAttribute('data-valid-from-label') || '',
+            detailQrContainer.getAttribute('data-valid-to-label') || ''
+        );
     }
 })();
 </script>
