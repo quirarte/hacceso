@@ -16,8 +16,8 @@ struct WifiNetwork {
 
 const WifiNetwork wifiNetworks[] = {
   {"INFINITUM8CFB_5", "8795201320"},
-  {"jardin", "Luna2014"},
-  {"hacedores", "hagamosalgo"},
+  {"Hacedores", "hagamosalgo"},
+  {"jardin", "Luna2014"},  
   {"G10", "hacedores"},
 
   // Agrega mas redes aqui, en el orden de prioridad:
@@ -37,6 +37,9 @@ HardwareSerial QRSerial(2);
 static const int QR_RX_PIN = 13; // ESP32 RX <- TX scanner
 static const int QR_TX_PIN = 14; // ESP32 TX -> RX scanner
 static const int MESSAGING_BUTTON_PIN = 27; // Boton entre GPIO27 y GND
+static const int ACCESS_DENIED_LED_PIN = 4;
+static const int ACCESS_ALLOWED_LED_PIN = 5;
+const unsigned long accessLedDurationMs = 7000;
 
 // ======== DISPLAY LCD 16x2 I2C ========
 static const uint8_t LCD_I2C_ADDRESS = 0x27;
@@ -63,6 +66,8 @@ bool stableButtonState = HIGH;
 unsigned long lastButtonChangeAt = 0;
 unsigned long lastMessagingAlertAt = 0;
 bool messagingAlertPending = false;
+unsigned long accessDeniedLedUntil = 0;
+unsigned long accessAllowedLedUntil = 0;
 String lastMonitorCommandId = "";
 unsigned long lastMonitorPollAt = 0;
 const unsigned long monitorPollIntervalMs = 1000;
@@ -121,6 +126,32 @@ String extractJsonString(const String& json, const String& key) {
   return value;
 }
 
+void signalAccessDenied() {
+  digitalWrite(ACCESS_DENIED_LED_PIN, HIGH);
+  digitalWrite(ACCESS_ALLOWED_LED_PIN, LOW);
+  accessDeniedLedUntil = millis() + accessLedDurationMs;
+  accessAllowedLedUntil = 0;
+}
+
+void signalAccessAllowed() {
+  digitalWrite(ACCESS_DENIED_LED_PIN, LOW);
+  digitalWrite(ACCESS_ALLOWED_LED_PIN, HIGH);
+  accessDeniedLedUntil = 0;
+  accessAllowedLedUntil = millis() + accessLedDurationMs;
+}
+
+void serviceAccessLeds() {
+  const unsigned long now = millis();
+  if (accessDeniedLedUntil != 0 && (long)(now - accessDeniedLedUntil) >= 0) {
+    digitalWrite(ACCESS_DENIED_LED_PIN, LOW);
+    accessDeniedLedUntil = 0;
+  }
+  if (accessAllowedLedUntil != 0 && (long)(now - accessAllowedLedUntil) >= 0) {
+    digitalWrite(ACCESS_ALLOWED_LED_PIN, LOW);
+    accessAllowedLedUntil = 0;
+  }
+}
+
 void showIdleDisplay() {
   lcdPrint2Lines("Hacceso Activo", "Esperando QR");
   isShowingResult = false;
@@ -137,7 +168,7 @@ void showApiResultOnLCD(const String& responseBody) {
   if (result == "OK_FIRST") {
     lcdPrint2Lines("ACCESO PERMITIDO", visitorName == "" ? "Bienvenido" : visitorName, true);
   } else if (result == "OK_REDISPLAY") {
-    lcdPrint2Lines("ACCESO REINGRESO", visitorName == "" ? "OK (60 seg)" : visitorName, true);
+    lcdPrint2Lines("ACCESO REINGRESO", visitorName == "" ? "OK (30 seg)" : visitorName, true);
   } else if (result == "INEXISTENT") {
     lcdPrint2Lines("CODIGO INVALIDO", "No registrado", true);
   } else if (result == "EXPIRED") {
@@ -249,16 +280,24 @@ bool sendQR(const String& qrText) {
     String response = http.getString();
     Serial.println(response);
     showApiResultOnLCD(response);
+    String result = extractJsonString(response, "result");
+    if (result == "OK_FIRST" || result == "OK_REDISPLAY") {
+      signalAccessAllowed();
+    } else {
+      signalAccessDenied();
+    }
     ok = true;
   } else if (code > 0) {
     Serial.print("ERROR HTTP "); Serial.println(code);
     String response = http.getString();
     Serial.println(response);
     lcdPrint2Lines("Error servidor", "HTTP " + String(code), true);
+    signalAccessDenied();
   } else {
     Serial.print("ERROR transporte: ");
     Serial.println(http.errorToString(code));
     lcdPrint2Lines("Sin conexion API", "Revise internet", true);
+    signalAccessDenied();
   }
 
   http.end();
@@ -389,6 +428,7 @@ void pollMonitorCommands() {
 void processQR(const String& qrText) {
   if (!isQRValid(qrText)) {
     logMsg("QR invalido");
+    signalAccessDenied();
     return;
   }
 
@@ -424,6 +464,10 @@ void setup() {
   QRSerial.begin(115200, SERIAL_8N1, QR_RX_PIN, QR_TX_PIN); // si falla prueba 9600 o 57600
   Serial.println("UART QR lista: RX GPIO13, TX GPIO14, 115200 baud");
   pinMode(MESSAGING_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(ACCESS_DENIED_LED_PIN, OUTPUT);
+  pinMode(ACCESS_ALLOWED_LED_PIN, OUTPUT);
+  digitalWrite(ACCESS_DENIED_LED_PIN, LOW);
+  digitalWrite(ACCESS_ALLOWED_LED_PIN, LOW);
   connectWiFi();
 }
 
@@ -461,6 +505,7 @@ void loop() {
   pollMessagingButton();
   serviceMessagingAlert();
   pollMonitorCommands();
+  serviceAccessLeds();
 
   if (isShowingResult && (millis() - lastDisplayEventAt) >= displayHoldDurationMs) {
     showIdleDisplay();
